@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { TranslationState, DocumentChunk, TranslationTone } from './types';
 import { fileService } from './services/fileService';
@@ -22,10 +21,7 @@ import {
   ChevronDown,
   Eye,
   EyeOff,
-  CheckCircle2,
-  Layout,
-  Maximize2,
-  Minimize2
+  CheckCircle2
 } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -175,7 +171,7 @@ const App: React.FC = () => {
 
     state.chunks.forEach((chunk) => {
       const text = chunk.translatedText || chunk.originalText;
-      const weightClass = chunk.metadata?.isBold ? "bold" : "";
+      const weightClass = chunk.metadata?.isBold || chunk.type === 'heading' ? "bold" : "";
       const italicClass = chunk.metadata?.isItalic ? "italic" : "";
       const align = chunk.metadata?.alignment || "left";
 
@@ -193,7 +189,7 @@ const App: React.FC = () => {
 
         if (chunk.type === 'heading') {
           const level = chunk.metadata?.level || 1;
-          bodyContent += `<h${level} style="text-align:${align}">${text}</h${level}>`;
+          bodyContent += `<h${level} style="text-align:${align}" class="bold">${text}</h${level}>`;
         } else {
           bodyContent += `<p style="text-align:${align}" class="${weightClass} ${italicClass}">${text}</p>`;
         }
@@ -243,15 +239,15 @@ const App: React.FC = () => {
             <div className="text-center space-y-10 max-w-5xl mx-auto">
               <div className="flex justify-center mb-6">
                 <span className="px-6 py-2 rounded-2xl text-[11px] font-black uppercase tracking-[0.4em] bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 border border-blue-100 dark:border-blue-800 shadow-sm">
-                  Enterprise Translation Hub
+                  Precision Neural Engine
                 </span>
               </div>
               <h1 className="text-6xl md:text-8xl font-black tracking-tighter leading-none font-serif text-[#001a33] dark:text-white">
                 Contextual.<br />
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-700 via-blue-500 to-indigo-600">Preserved.</span>
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-700 via-blue-500 to-indigo-600">Pure Fidelity.</span>
               </h1>
               <p className="text-xl text-slate-500 dark:text-slate-400 max-w-3xl mx-auto font-medium leading-relaxed">
-                Translate professional documents with native structural fidelity. Supported by Gemini neural logic.
+                Translate enterprise files with semantic structural mapping and multimodal vision OCR.
               </p>
             </div>
             <div className="max-w-4xl mx-auto">
@@ -261,16 +257,16 @@ const App: React.FC = () => {
                     <FileText className="w-3.5 h-3.5" /> File Upload
                   </button>
                   <button onClick={() => setInputMode('text')} className={`flex items-center gap-2 px-8 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${inputMode === 'text' ? 'bg-blue-600 shadow-lg text-white' : 'text-slate-400'}`}>
-                    <Type className="w-3.5 h-3.5" /> Raw Text
+                    <Type className="w-3.5 h-3.5" /> Raw Input
                   </button>
                 </div>
               </div>
               <div className="relative bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[2.5rem] shadow-2xl p-6 min-h-[400px]">
                 {inputMode === 'file' ? <FileUploader onUpload={handleFileUpload} /> : (
                   <div className="h-full flex flex-col gap-6">
-                    <textarea className="flex-1 bg-transparent border-none focus:ring-0 text-xl font-medium placeholder:text-slate-300 resize-none min-h-[300px]" placeholder="Paste document content..." value={rawText} onChange={(e) => setRawText(e.target.value)} />
+                    <textarea className="flex-1 bg-transparent border-none focus:ring-0 text-xl font-medium placeholder:text-slate-300 resize-none min-h-[300px]" placeholder="Paste document content here..." value={rawText} onChange={(e) => setRawText(e.target.value)} />
                     <div className="flex justify-end pt-4 border-t border-slate-100 dark:border-slate-800">
-                      <button onClick={() => setState(p => ({...p, originalFileName: 'Input_Text', chunks: rawText.split('\n').filter(l=>l.trim()).map((l,i)=>({id:`t-${i}`,type:'paragraph',originalText:l}))}))} className="bg-blue-600 text-white px-10 py-4 rounded-xl font-black uppercase tracking-widest shadow-xl flex items-center gap-3">Analyze <ArrowRight className="w-5 h-5" /></button>
+                      <button onClick={() => setState(p => ({...p, originalFileName: 'Manual_Entry', chunks: rawText.split('\n').filter(l=>l.trim()).map((l,i)=>({id:`t-${i}`,type:'paragraph',originalText:l}))}))} className="bg-blue-600 text-white px-10 py-4 rounded-xl font-black uppercase tracking-widest shadow-xl flex items-center gap-3">Process Text <ArrowRight className="w-5 h-5" /></button>
                     </div>
                   </div>
                 )}
@@ -286,18 +282,18 @@ const App: React.FC = () => {
                   <div className="text-slate-400"><ArrowRight className="w-4 h-4" /></div>
                   <div className="bg-white dark:bg-slate-800 p-3 px-5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm min-w-[160px]"><label className="text-[9px] font-black uppercase tracking-[0.3em] text-blue-600 block mb-0.5">Target</label><LanguagePicker value={state.targetLang} onChange={(v) => setState(p => ({ ...p, targetLang: v }))} /></div>
                   <div className="bg-white dark:bg-slate-800 p-3 px-5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm min-w-[160px] relative">
-                    <label className="text-[9px] font-black uppercase tracking-[0.3em] text-indigo-600 block mb-0.5">Domain</label>
+                    <label className="text-[9px] font-black uppercase tracking-[0.3em] text-indigo-600 block mb-0.5">Tone</label>
                     <select value={state.tone} onChange={(e) => setState(p => ({ ...p, tone: e.target.value as TranslationTone }))} className="bg-transparent border-none p-0 focus:ring-0 font-bold text-slate-700 dark:text-white cursor-pointer w-full appearance-none">
                       {TRANSLATION_TONES.map(t => (<option key={t.id} value={t.id}>{t.icon} {t.name}</option>))}
                     </select><ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-4 top-1/2" />
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-4">
-                  <button onClick={toggleSource} className={`flex items-center gap-2 px-5 py-3 rounded-xl font-bold transition-all border ${showSource ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-slate-200 text-slate-600'}`}>
-                    {showSource ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />} {showSource ? 'Focus Mode' : 'Dual View'}
+                  <button onClick={toggleSource} className={`flex items-center gap-2 px-5 py-3 rounded-xl font-bold transition-all border ${showSource ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                    {showSource ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />} {showSource ? 'Focus Mode' : 'Show Source'}
                   </button>
-                  <button onClick={() => setShowGlossary(true)} className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700"><Book className="w-4 h-4" /> Glossary</button>
-                  <button onClick={startTranslation} disabled={state.isProcessing} className="bg-blue-600 text-white px-10 py-3 rounded-xl font-black uppercase tracking-widest shadow-lg flex items-center gap-3">
+                  <button onClick={() => setShowGlossary(true)} className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 transition-colors"><Book className="w-4 h-4" /> Glossary</button>
+                  <button onClick={startTranslation} disabled={state.isProcessing} className="bg-blue-600 text-white px-10 py-3 rounded-xl font-black uppercase tracking-widest shadow-lg flex items-center gap-3 hover:bg-blue-700 transition-all">
                     {state.isProcessing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Globe className="w-5 h-5" />}
                     {state.isProcessing ? 'Thinking...' : 'Translate'}
                   </button>
@@ -310,12 +306,13 @@ const App: React.FC = () => {
                 </div>
               )}
             </div>
-            <div className={`grid gap-6 min-h-[75vh] transition-all duration-500 ${showSource ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1'}`}>
+            
+            <div className={`grid gap-8 min-h-[75vh] transition-all duration-500 ${showSource ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1 max-w-4xl mx-auto'}`}>
               {showSource && (
                 <div className="flex flex-col bg-white dark:bg-slate-900 rounded-[2rem] border border-slate-200 dark:border-slate-800 shadow-lg overflow-hidden animate-in slide-in-from-left-4 duration-500">
                   <div className="px-8 py-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50">
-                    <h3 className="font-black text-[10px] uppercase tracking-[0.3em] text-slate-400">Source Buffer</h3>
-                    <div className="text-[9px] font-bold text-slate-300">{state.originalFileName}</div>
+                    <h3 className="font-black text-[10px] uppercase tracking-[0.3em] text-slate-400">Source Document</h3>
+                    <div className="text-[9px] font-bold text-slate-400 truncate max-w-[200px]">{state.originalFileName}</div>
                   </div>
                   <div className="flex-1 overflow-y-auto p-4 md:p-10">
                     {state.chunks.length === 0 && state.originalFileData ? (
@@ -332,10 +329,10 @@ const App: React.FC = () => {
               )}
               <div className="flex flex-col bg-white dark:bg-slate-900 rounded-[2rem] border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden relative transition-all duration-500">
                 <div className="px-8 py-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-blue-50/10">
-                  <h3 className="font-black text-[10px] uppercase tracking-[0.3em] text-blue-600">Neural Optimized Output</h3>
+                  <h3 className="font-black text-[10px] uppercase tracking-[0.3em] text-blue-600">Neural Optimized Result</h3>
                   {state.progress === 100 && (
                     <button onClick={handleDownloadDoc} className="bg-blue-600 text-white px-6 py-2 rounded-lg text-[9px] font-black tracking-widest flex items-center gap-2 hover:bg-blue-700 transition-colors">
-                      <Download className="w-3.5 h-3.5" /> EXPORT AS DOCX
+                      <Download className="w-3.5 h-3.5" /> EXPORT DOCX
                     </button>
                   )}
                 </div>

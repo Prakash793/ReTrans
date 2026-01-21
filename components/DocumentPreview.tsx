@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { DocumentChunk } from '../types';
 
@@ -127,8 +126,17 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ chunks, mode }) => {
         {renderContent()}
       </div>
       <style>{`
-        .document-paper h1, .document-paper h2, .document-paper h3, .document-paper h4, .document-paper p {
+        .document-paper h1, .document-paper h2, .document-paper h3, .document-paper h4, .document-paper h5, .document-paper h6 {
+          font-size: 14pt !important;
           margin-top: 0 !important;
+          margin-bottom: 12pt !important;
+          color: inherit !important;
+          font-weight: bold !important;
+        }
+        .document-paper p {
+          font-size: 11pt !important;
+          margin-top: 0 !important;
+          margin-bottom: 11pt !important;
           color: inherit !important;
         }
         .document-paper table {
