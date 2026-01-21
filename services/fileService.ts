@@ -42,7 +42,6 @@ export class FileService {
       reader.readAsDataURL(file);
       reader.onload = () => {
         const result = reader.result as string;
-        // Remove the data:mime/type;base64, prefix
         resolve(result.split(',')[1]);
       };
       reader.onerror = error => reject(error);
@@ -64,18 +63,62 @@ export class FileService {
   private async processDocx(file: File): Promise<DocumentChunk[]> {
     try {
       const arrayBuffer = await file.arrayBuffer();
-      const result = await mammoth.extractRawText({ arrayBuffer });
-      const lines = result.value.split(/\n\n/).filter((l: string) => l.trim().length > 0);
+      // Use convertToHtml to preserve structure (bold, tables, headings)
+      const result = await mammoth.convertToHtml({ arrayBuffer });
+      const html = result.value;
       
-      return lines.map((line: string, index: number) => ({
-        id: `docx-${index}`,
-        type: index === 0 ? 'heading' : 'paragraph',
-        originalText: line.trim(),
-        metadata: { alignment: 'left', level: index === 0 ? 1 : undefined }
-      }));
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+      const chunks: DocumentChunk[] = [];
+      
+      const walk = (node: Node) => {
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          const el = node as HTMLElement;
+          const tagName = el.tagName.toLowerCase();
+          
+          if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tagName)) {
+            chunks.push({
+              id: `docx-h-${chunks.length}`,
+              type: 'heading',
+              originalText: el.innerText.trim(),
+              metadata: { level: parseInt(tagName.substring(1)), isBold: true }
+            });
+          } else if (tagName === 'p') {
+            const text = el.innerText.trim();
+            if (text) {
+              chunks.push({
+                id: `docx-p-${chunks.length}`,
+                type: 'paragraph',
+                originalText: text,
+                metadata: { 
+                  isBold: el.querySelector('strong, b') !== null,
+                  isItalic: el.querySelector('em, i') !== null
+                }
+              });
+            }
+          } else if (tagName === 'td' || tagName === 'th') {
+            chunks.push({
+              id: `docx-td-${chunks.length}`,
+              type: 'table-cell',
+              originalText: el.innerText.trim(),
+              metadata: { 
+                isBold: tagName === 'th' || el.querySelector('strong, b') !== null,
+                alignment: (el.style.textAlign as any) || 'left'
+              }
+            });
+          } else {
+            for (let i = 0; i < el.childNodes.length; i++) {
+              walk(el.childNodes[i]);
+            }
+          }
+        }
+      };
+
+      walk(doc.body);
+      return chunks;
     } catch (err) {
-      console.error("DOCX parsing error:", err);
-      throw new Error("Failed to parse Word document structure.");
+      console.error("DOCX structure extraction error:", err);
+      throw new Error("Failed to extract document structure.");
     }
   }
 
@@ -96,7 +139,7 @@ export class FileService {
         let currentLine = "";
         let lastY = -1;
         
-        for (const item of textContent.items) {
+        for (const item of (textContent.items as any[])) {
           const y = item.transform[5];
           if (lastY !== -1 && Math.abs(y - lastY) > 5) {
             if (currentLine.trim()) {
@@ -122,13 +165,9 @@ export class FileService {
           });
         }
       }
-      
-      // We don't return the "Empty" error chunk here anymore, 
-      // the App will handle empty chunks by using Multimodal fallback.
       return chunks;
     } catch (err) {
       console.error("PDF parsing error:", err);
-      // Even if parsing fails, we return empty chunks so fallback can take over
       return [];
     }
   }

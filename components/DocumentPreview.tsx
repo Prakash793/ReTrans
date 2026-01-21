@@ -8,7 +8,6 @@ interface DocumentPreviewProps {
 }
 
 const DocumentPreview: React.FC<DocumentPreviewProps> = ({ chunks, mode }) => {
-  // Group consecutive table cells into tables
   const renderContent = () => {
     const renderedElements: React.ReactNode[] = [];
     let currentTableCells: DocumentChunk[] = [];
@@ -20,7 +19,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ chunks, mode }) => {
       }
     };
 
-    chunks.forEach((chunk, index) => {
+    chunks.forEach((chunk) => {
       if (chunk.type === 'table-cell') {
         currentTableCells.push(chunk);
       } else {
@@ -34,7 +33,6 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ chunks, mode }) => {
   };
 
   const renderTable = (cells: DocumentChunk[]) => {
-    // Determine rows
     const rows: Record<number, DocumentChunk[]> = {};
     cells.forEach(cell => {
       const rowIndex = cell.metadata?.row ?? 0;
@@ -45,8 +43,8 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ chunks, mode }) => {
     const sortedRowIndices = Object.keys(rows).map(Number).sort((a, b) => a - b);
 
     return (
-      <div key={`table-${cells[0].id}`} className="mb-8 overflow-x-auto">
-        <table className="w-full border-collapse border border-slate-300 dark:border-slate-700 text-sm">
+      <div key={`table-${cells[0].id}`} className="mb-6 overflow-x-auto">
+        <table className="w-full border-collapse border border-slate-300 dark:border-slate-700 text-[11pt]">
           <tbody>
             {sortedRowIndices.map(rowIndex => (
               <tr key={`row-${rowIndex}`} className="border-b border-slate-200 dark:border-slate-800">
@@ -90,55 +88,56 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ chunks, mode }) => {
     }
 
     const customStyles: React.CSSProperties = {
-      fontSize: chunk.metadata?.fontSize,
-      fontFamily: chunk.metadata?.fontFamily,
-      textAlign: chunk.metadata?.alignment || 'left',
+      fontSize: chunk.type === 'heading' ? '14pt' : '11pt',
+      fontFamily: chunk.metadata?.fontFamily || "'Inter', sans-serif",
+      textAlign: (chunk.metadata?.alignment as any) || 'left',
     };
 
-    const weightClass = chunk.metadata?.isBold ? 'font-bold' : 'font-normal';
+    const weightClass = chunk.metadata?.isBold || chunk.type === 'heading' ? 'font-bold' : 'font-normal';
     const italicClass = chunk.metadata?.isItalic ? 'italic' : '';
 
-    switch (chunk.type) {
-      case 'heading':
-        const level = chunk.metadata?.level || 1;
-        const HeadingTag = `h${level}` as any;
-        const headingSize = level === 1 ? 'text-3xl' : level === 2 ? 'text-2xl' : 'text-xl';
-        return (
-          <HeadingTag 
-            key={chunk.id} 
-            className={`${headingSize} ${weightClass} ${italicClass} mb-6 leading-tight font-lexend text-slate-900 dark:text-slate-100`}
-            style={customStyles}
-          >
-            {text}
-          </HeadingTag>
-        );
-      default:
-        return (
-          <p 
-            key={chunk.id} 
-            className={`mb-4 leading-relaxed text-slate-700 dark:text-slate-300 ${weightClass} ${italicClass} ${text === ' ' ? 'h-6' : ''}`}
-            style={customStyles}
-          >
-            {text}
-          </p>
-        );
+    if (chunk.type === 'heading') {
+      const level = chunk.metadata?.level || 1;
+      const HeadingTag = `h${level}` as any;
+      return (
+        <HeadingTag 
+          key={chunk.id} 
+          className={`${weightClass} ${italicClass} mb-4 leading-tight text-slate-900 dark:text-slate-100`}
+          style={customStyles}
+        >
+          {text}
+        </HeadingTag>
+      );
     }
+
+    return (
+      <p 
+        key={chunk.id} 
+        className={`mb-4 leading-relaxed text-slate-700 dark:text-slate-300 ${weightClass} ${italicClass}`}
+        style={customStyles}
+      >
+        {text}
+      </p>
+    );
   };
 
   return (
-    <div className="document-paper min-h-full bg-white dark:bg-slate-900/50 p-8 md:p-12 shadow-inner rounded-xl border border-slate-100 dark:border-slate-800">
+    <div className="document-paper min-h-full bg-white dark:bg-slate-900/30 p-8 md:p-14 shadow-sm rounded-xl border border-slate-100 dark:border-slate-800 transition-all duration-300">
       <div className="max-w-none prose prose-slate dark:prose-invert">
         {renderContent()}
       </div>
       <style>{`
-        .document-paper h1, .document-paper h2, .document-paper h3, .document-paper p {
+        .document-paper h1, .document-paper h2, .document-paper h3, .document-paper h4, .document-paper p {
           margin-top: 0 !important;
           color: inherit !important;
         }
         .document-paper table {
           border-collapse: collapse !important;
           margin-top: 1rem !important;
-          margin-bottom: 1rem !important;
+          margin-bottom: 1.5rem !important;
+        }
+        .document-paper {
+          box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.02);
         }
       `}</style>
     </div>
