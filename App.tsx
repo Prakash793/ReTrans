@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+
+import React, { useState, useEffect } from 'react';
 import { TranslationState, DocumentChunk, TranslationTone } from './types';
 import { fileService } from './services/fileService';
 import { geminiService } from './services/geminiService';
@@ -21,8 +22,22 @@ import {
   ChevronDown,
   Eye,
   EyeOff,
-  CheckCircle2
+  CheckCircle2,
+  Key
 } from 'lucide-react';
+
+// Declare custom aistudio window methods
+// Fix: Use named interface AIStudio to resolve property declaration conflicts and ensure identical modifiers on the window object.
+declare global {
+  interface AIStudio {
+    hasSelectedApiKey: () => Promise<boolean>;
+    openSelectKey: () => Promise<void>;
+  }
+
+  interface Window {
+    aistudio: AIStudio;
+  }
+}
 
 const App: React.FC = () => {
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
@@ -47,6 +62,24 @@ const App: React.FC = () => {
 
   const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
   const toggleSource = () => setShowSource(prev => !prev);
+
+  const checkAndSelectKey = async (): Promise<boolean> => {
+    try {
+      // If we don't have process.env.API_KEY, we MUST check with aistudio
+      if (!process.env.API_KEY || process.env.API_KEY === 'undefined') {
+        const hasKey = await window.aistudio.hasSelectedApiKey();
+        if (!hasKey) {
+          await window.aistudio.openSelectKey();
+          // After opening, we assume success as per rules to avoid race conditions
+          return true;
+        }
+      }
+      return true;
+    } catch (e) {
+      console.error("Auth helper error:", e);
+      return true;
+    }
+  };
 
   const handleFileUpload = async (file: File) => {
     setState(prev => ({ 
@@ -82,6 +115,9 @@ const App: React.FC = () => {
   const startTranslation = async () => {
     const isImageBased = (state.chunks.length === 0 || state.chunks.every(c => !c.originalText.trim())) && state.originalFileData;
     
+    // Ensure API Key is available before starting
+    await checkAndSelectKey();
+
     setState(prev => ({ 
       ...prev, 
       isProcessing: true, 
@@ -135,12 +171,13 @@ const App: React.FC = () => {
         }));
       }
     } catch (err: any) {
+      const isAuthError = err.message === 'API_KEY_NOT_FOUND' || err.message?.includes("API Key must be set");
       setState(prev => ({ 
         ...prev, 
         isProcessing: false, 
-        error: err.message || 'Unknown protocol interruption.', 
+        error: isAuthError ? 'Linguistic engine requires a valid API key. Please select a project with billing enabled.' : (err.message || 'Unknown protocol interruption.'), 
         progress: 0, 
-        statusMessage: 'Linguistic Link Severed.' 
+        statusMessage: 'Engine Interrupted.' 
       }));
     }
   };
@@ -339,7 +376,19 @@ const App: React.FC = () => {
                 <div className="flex-1 overflow-y-auto p-4 md:p-10">
                   {state.error ? (
                     <div className="h-full flex flex-col items-center justify-center text-center p-10 space-y-4">
-                      <AlertCircle className="w-12 h-12 text-red-500" /><h4 className="text-xl font-bold">Process Error</h4><p className="text-slate-500 text-sm">{state.error}</p><button onClick={startTranslation} className="bg-slate-900 text-white px-8 py-3 rounded-lg font-bold text-sm">Retry Engine</button>
+                      <AlertCircle className="w-12 h-12 text-red-500" />
+                      <h4 className="text-xl font-bold">Process Error</h4>
+                      <p className="text-slate-500 text-sm max-w-sm mx-auto">{state.error}</p>
+                      <div className="flex gap-4 justify-center">
+                        <button onClick={startTranslation} className="bg-slate-900 text-white px-8 py-3 rounded-lg font-bold text-sm flex items-center gap-2">
+                          Retry Engine
+                        </button>
+                        {(state.error.includes("API key") || state.error.includes("Linguistic engine")) && (
+                          <button onClick={() => window.aistudio.openSelectKey()} className="bg-blue-600 text-white px-8 py-3 rounded-lg font-bold text-sm flex items-center gap-2">
+                            <Key className="w-4 h-4" /> Select Key
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ) : (
                     <DocumentPreview chunks={state.chunks} mode="translated" />

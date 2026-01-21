@@ -4,12 +4,6 @@ import { DocumentChunk, GlossaryItem, TranslationTone } from "../types";
 import { GEMINI_MODEL } from "../constants";
 
 export class GeminiService {
-  constructor() {}
-
-  private getClient(): GoogleGenAI {
-    return new GoogleGenAI({ apiKey: process.env.API_KEY });
-  }
-
   /**
    * Translates chunks using the standard text-based batching engine.
    */
@@ -45,7 +39,6 @@ export class GeminiService {
 
   /**
    * Fallback for scanned documents (Vision-OCR mode).
-   * It takes the file itself and performs visual translation.
    */
   async translateScannedDocument(
     fileData: string,
@@ -53,7 +46,8 @@ export class GeminiService {
     targetLang: string,
     tone: TranslationTone
   ): Promise<DocumentChunk[]> {
-    const ai = this.getClient();
+    // Create instance right before call to ensure latest API key
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
     const systemInstruction = `You are an elite Vision-OCR translation engine. 
     You have been provided with a document that is either scanned or lacks a text layer.
@@ -62,7 +56,7 @@ export class GeminiService {
     1. Scan the image/document visually.
     2. Extract all readable text segments.
     3. Translate the content to ${targetLang} using a ${tone} tone.
-    4. Maintain the original logical structure (headings, paragraphs).
+    4. Maintain the original logical structure.
     
     OUTPUT FORMAT:
     Return a JSON array of objects with this schema: 
@@ -108,7 +102,10 @@ export class GeminiService {
         translatedText: item.translatedText,
         metadata: { alignment: 'left' }
       }));
-    } catch (err) {
+    } catch (err: any) {
+      if (err.message?.includes("entity was not found")) {
+        throw new Error("API_KEY_NOT_FOUND");
+      }
       console.error("Multimodal Fallback Error:", err);
       throw new Error("Neural vision scan failed. Ensure document is legible.");
     }
@@ -123,7 +120,7 @@ export class GeminiService {
     useGrounding: boolean,
     glossary: GlossaryItem[]
   ): Promise<string[]> {
-    const ai = this.getClient();
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const textToTranslate = batch.map(c => c.originalText);
     
     let glossaryInstruction = "";
@@ -134,10 +131,10 @@ export class GeminiService {
 
     const toneInstructions: Record<TranslationTone, string> = {
       professional: "Formal, balanced business tone.",
-      legal: "Precise legal terminology. Formal syntax.",
-      technical: "Precise engineering jargon and measurements.",
+      legal: "Precise legal terminology.",
+      technical: "Precise engineering jargon.",
       medical: "Clinical accuracy.",
-      creative: "Stylistic resonance and brand voice."
+      creative: "Stylistic resonance."
     };
 
     const config: any = {
@@ -164,12 +161,15 @@ export class GeminiService {
       const parsed = JSON.parse(response.text || "[]");
       return new Array(batch.length).fill("").map((_, i) => parsed[i] || batch[i].originalText);
     } catch (error: any) {
+      if (error.message?.includes("API Key must be set") || error.message?.includes("entity was not found")) {
+        throw new Error("API_KEY_NOT_FOUND");
+      }
       return textToTranslate;
     }
   }
 
   async detectLanguage(sampleText: string): Promise<string> {
-    const ai = this.getClient();
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     try {
       const response = await ai.models.generateContent({
         model: GEMINI_MODEL,
