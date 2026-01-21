@@ -23,19 +23,18 @@ import {
   Eye,
   EyeOff,
   CheckCircle2,
-  Key
+  Key,
+  ExternalLink,
+  ShieldCheck
 } from 'lucide-react';
 
-// Declare custom aistudio window methods
-// Fix: Use named interface AIStudio to resolve property declaration conflicts and ensure identical modifiers on the window object.
+// FIX: Declare 'aistudio' as readonly in the global Window interface to match system modifiers.
 declare global {
-  interface AIStudio {
-    hasSelectedApiKey: () => Promise<boolean>;
-    openSelectKey: () => Promise<void>;
-  }
-
   interface Window {
-    aistudio: AIStudio;
+    readonly aistudio: {
+      hasSelectedApiKey: () => Promise<boolean>;
+      openSelectKey: () => Promise<void>;
+    };
   }
 }
 
@@ -45,6 +44,8 @@ const App: React.FC = () => {
   const [showSource, setShowSource] = useState(true);
   const [inputMode, setInputMode] = useState<'file' | 'text'>('file');
   const [rawText, setRawText] = useState('');
+  const [hasKey, setHasKey] = useState<boolean | null>(null);
+  
   const [state, setState] = useState<TranslationState>({
     isProcessing: false,
     progress: 0,
@@ -60,24 +61,32 @@ const App: React.FC = () => {
     glossary: [],
   });
 
+  useEffect(() => {
+    const initKeyCheck = async () => {
+      if (process.env.API_KEY && process.env.API_KEY !== 'undefined') {
+        setHasKey(true);
+        return;
+      }
+      try {
+        const selected = await window.aistudio.hasSelectedApiKey();
+        setHasKey(selected);
+      } catch (e) {
+        setHasKey(false);
+      }
+    };
+    initKeyCheck();
+  }, []);
+
   const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
   const toggleSource = () => setShowSource(prev => !prev);
 
-  const checkAndSelectKey = async (): Promise<boolean> => {
+  const handleKeySelection = async () => {
     try {
-      // If we don't have process.env.API_KEY, we MUST check with aistudio
-      if (!process.env.API_KEY || process.env.API_KEY === 'undefined') {
-        const hasKey = await window.aistudio.hasSelectedApiKey();
-        if (!hasKey) {
-          await window.aistudio.openSelectKey();
-          // After opening, we assume success as per rules to avoid race conditions
-          return true;
-        }
-      }
-      return true;
+      await window.aistudio.openSelectKey();
+      setHasKey(true);
+      if (state.error) setState(p => ({ ...p, error: null }));
     } catch (e) {
-      console.error("Auth helper error:", e);
-      return true;
+      console.error("Key selection failed");
     }
   };
 
@@ -113,11 +122,14 @@ const App: React.FC = () => {
   };
 
   const startTranslation = async () => {
+    // Proactive Check: Ensure key exists before starting heavy processing
+    if (!hasKey) {
+      await handleKeySelection();
+      // Proceeding as per rules: assume success after triggering openSelectKey
+    }
+
     const isImageBased = (state.chunks.length === 0 || state.chunks.every(c => !c.originalText.trim())) && state.originalFileData;
     
-    // Ensure API Key is available before starting
-    await checkAndSelectKey();
-
     setState(prev => ({ 
       ...prev, 
       isProcessing: true, 
@@ -171,11 +183,20 @@ const App: React.FC = () => {
         }));
       }
     } catch (err: any) {
-      const isAuthError = err.message === 'API_KEY_NOT_FOUND' || err.message?.includes("API Key must be set");
+      const isAuthError = err.message === 'API_KEY_NOT_FOUND' || err.message?.includes("API key");
+      const isEntityError = err.message?.includes("entity was not found");
+
+      if (isEntityError) {
+        // Rule: reset key selection state and prompt again
+        handleKeySelection();
+      }
+
       setState(prev => ({ 
         ...prev, 
         isProcessing: false, 
-        error: isAuthError ? 'Linguistic engine requires a valid API key. Please select a project with billing enabled.' : (err.message || 'Unknown protocol interruption.'), 
+        error: isAuthError 
+          ? 'Neural engine requires a valid API key from a paid project. Non-paid projects may lack access to Pro models.' 
+          : (err.message || 'Unknown protocol interruption.'), 
         progress: 0, 
         statusMessage: 'Engine Interrupted.' 
       }));
@@ -288,6 +309,27 @@ const App: React.FC = () => {
               </p>
             </div>
             <div className="max-w-4xl mx-auto">
+              {/* API Key Status Banner */}
+              {!hasKey && (
+                <div className="mb-8 p-6 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-3xl flex flex-col md:flex-row items-center justify-between gap-4">
+                  <div className="flex items-center gap-4 text-amber-800 dark:text-amber-400">
+                    <ShieldCheck className="w-8 h-8 flex-shrink-0" />
+                    <div>
+                      <p className="font-bold text-sm">Neural Link Inactive</p>
+                      <p className="text-xs opacity-80">Connect your Gemini API Key from a paid project to begin.</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener" className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-amber-700 hover:underline">
+                      Billing Docs <ExternalLink className="w-3 h-3" />
+                    </a>
+                    <button onClick={handleKeySelection} className="bg-amber-600 text-white px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-amber-600/20">
+                      Connect Engine
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="flex justify-center mb-10">
                 <div className="bg-white/80 dark:bg-slate-900/80 p-1.5 rounded-2xl flex gap-1 border border-slate-200 dark:border-slate-800 shadow-xl">
                   <button onClick={() => setInputMode('file')} className={`flex items-center gap-2 px-8 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${inputMode === 'file' ? 'bg-blue-600 shadow-lg text-white' : 'text-slate-400'}`}>
@@ -376,17 +418,31 @@ const App: React.FC = () => {
                 <div className="flex-1 overflow-y-auto p-4 md:p-10">
                   {state.error ? (
                     <div className="h-full flex flex-col items-center justify-center text-center p-10 space-y-4">
-                      <AlertCircle className="w-12 h-12 text-red-500" />
+                      <div className="bg-red-50 dark:bg-red-900/10 p-4 rounded-full">
+                        <AlertCircle className="w-12 h-12 text-red-500" />
+                      </div>
                       <h4 className="text-xl font-bold">Process Error</h4>
-                      <p className="text-slate-500 text-sm max-w-sm mx-auto">{state.error}</p>
-                      <div className="flex gap-4 justify-center">
-                        <button onClick={startTranslation} className="bg-slate-900 text-white px-8 py-3 rounded-lg font-bold text-sm flex items-center gap-2">
-                          Retry Engine
-                        </button>
-                        {(state.error.includes("API key") || state.error.includes("Linguistic engine")) && (
-                          <button onClick={() => window.aistudio.openSelectKey()} className="bg-blue-600 text-white px-8 py-3 rounded-lg font-bold text-sm flex items-center gap-2">
+                      <p className="text-slate-500 text-sm max-w-sm mx-auto leading-relaxed">{state.error}</p>
+                      
+                      <div className="flex flex-col gap-4 items-center mt-6">
+                        <div className="flex gap-4">
+                          <button onClick={startTranslation} className="bg-slate-900 text-white px-8 py-3 rounded-xl font-bold text-sm flex items-center gap-2 shadow-lg">
+                            Retry Engine
+                          </button>
+                          <button onClick={handleKeySelection} className="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold text-sm flex items-center gap-2 shadow-lg">
                             <Key className="w-4 h-4" /> Select Key
                           </button>
+                        </div>
+                        
+                        {(state.error.includes("valid API key") || state.error.includes("billing")) && (
+                          <a 
+                            href="https://ai.google.dev/gemini-api/docs/billing" 
+                            target="_blank" 
+                            rel="noopener" 
+                            className="text-[10px] font-black uppercase tracking-widest text-blue-600 flex items-center gap-1.5 hover:underline"
+                          >
+                            Set up Paid Billing <ExternalLink className="w-3 h-3" />
+                          </a>
                         )}
                       </div>
                     </div>
