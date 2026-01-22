@@ -31,4 +31,4 @@ export const TRANSLATION_TONES = [
 ] as const;
 
 export const APP_NAME = "ReTrans";
-export const GEMINI_MODEL = "gemini-3-pro-preview";
+export const GEMINI_MODEL = "gemini-3-flash-preview";
