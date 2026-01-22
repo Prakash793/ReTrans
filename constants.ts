@@ -31,4 +31,9 @@ export const TRANSLATION_TONES = [
 ] as const;
 
 export const APP_NAME = "ReTrans";
-export const GEMINI_MODEL = "gemini-3-flash-preview";
+
+// Define Engine Models
+export const ENGINES = {
+  FLASH: 'gemini-3-flash-preview', // High speed, high limits (Free feel)
+  PRO: 'gemini-3-pro-preview'      // High quality, precision
+};
