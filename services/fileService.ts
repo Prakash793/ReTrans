@@ -1,7 +1,6 @@
 
 import { DocumentChunk } from "../types";
 
-// Access global libraries from CDN
 declare const mammoth: any;
 declare const pdfjsLib: any;
 
@@ -50,7 +49,6 @@ export class FileService {
 
   private async processTxt(file: File): Promise<DocumentChunk[]> {
     const text = await file.text();
-    // Keep empty lines for structural mirroring
     const lines = text.split(/\r?\n/);
     
     return lines.map((line, index) => {
@@ -90,7 +88,11 @@ export class FileService {
               id: `docx-h-${chunks.length}`,
               type: 'heading',
               originalText: el.innerText.trim(),
-              metadata: { level: parseInt(tagName.substring(1)), isBold: true }
+              metadata: { 
+                level: parseInt(tagName.substring(1)), 
+                isBold: true,
+                isUnderlined: el.querySelector('u') !== null || el.style.textDecoration.includes('underline')
+              }
             });
           } else if (tagName === 'p') {
             const text = el.innerText.trim();
@@ -99,7 +101,6 @@ export class FileService {
               return;
             }
 
-            // Check for checkbox characters in text
             const checkboxMatch = text.match(/^[\[(][xX\s][\])]|^[☐☑☒]/);
             
             chunks.push({
@@ -109,7 +110,7 @@ export class FileService {
               metadata: { 
                 isBold: el.querySelector('strong, b') !== null,
                 isItalic: el.querySelector('em, i') !== null,
-                isUnderlined: el.querySelector('u') !== null || el.style.textDecoration.includes('underline'),
+                isUnderlined: el.querySelector('u') !== null || el.style.textDecoration.includes('underline') || !!el.closest('u'),
                 isCheckbox: !!checkboxMatch,
                 isChecked: text.includes('☑') || text.includes('☒') || /^[\[(][xX][\])]/.test(text)
               }
@@ -121,7 +122,7 @@ export class FileService {
               originalText: el.innerText.trim(),
               metadata: { 
                 isBold: tagName === 'th' || el.querySelector('strong, b') !== null,
-                isUnderlined: el.querySelector('u') !== null,
+                isUnderlined: el.querySelector('u') !== null || el.style.textDecoration.includes('underline'),
                 alignment: (el.style.textAlign as any) || 'left'
               }
             });
@@ -139,7 +140,7 @@ export class FileService {
       return chunks;
     } catch (err) {
       console.error("DOCX extraction error:", err);
-      throw new Error("Failed to extract document structure.");
+      throw new Error("Structure scan failed on this DOCX.");
     }
   }
 
@@ -162,7 +163,7 @@ export class FileService {
         
         for (const item of (textContent.items as any[])) {
           const y = item.transform[5];
-          if (lastY !== -1 && Math.abs(y - lastY) > 8) {
+          if (lastY !== -1 && Math.abs(y - lastY) > 10) {
             if (currentLine.trim()) {
               chunks.push({
                 id: `pdf-p-${chunks.length}`,
