@@ -1,5 +1,7 @@
 {
   "name": "ReTrans Enterprise Document Translation",
   "description": "A professional-grade document translation platform supporting text, DOCX, and PDF with structural preservation and Gemini-powered context-aware translation.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [
+    "camera"
+  ]
 }
