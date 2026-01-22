@@ -11,13 +11,10 @@ import DocumentPreview from './components/DocumentPreview';
 import FileUploader from './components/FileUploader';
 import GlossaryManager from './components/GlossaryManager';
 import { 
-  ArrowRight, 
   Loader2, 
-  Book, 
   AlertCircle, 
   Eye, 
   EyeOff, 
-  Key, 
   RefreshCcw, 
   Zap,
   Download,
@@ -35,10 +32,8 @@ declare global {
 
 const App: React.FC = () => {
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
-  const [showGlossary, setShowGlossary] = useState(false);
   const [showSource, setShowSource] = useState(true);
-  const [hasKey, setHasKey] = useState<boolean>(true);
-  const [selectedEngine, setSelectedEngine] = useState<string>(ENGINES.PRO); // Default to PRO for Real Estate precision
+  const [selectedEngine] = useState<string>(ENGINES.PRO); // Default to PRO for Real Estate precision
   const [libsReady, setLibsReady] = useState<{docx: boolean, pdf: boolean}>({ docx: false, pdf: false });
   
   const [state, setState] = useState<TranslationState>({
@@ -56,46 +51,18 @@ const App: React.FC = () => {
     glossary: [],
   });
 
+  // Simple library initialization check
   useEffect(() => {
-    const checkStatus = async () => {
-      const checkLibs = () => {
-        const docx = typeof window.mammoth !== 'undefined';
-        const pdf = typeof window.pdfjsLib !== 'undefined';
-        setLibsReady({ docx, pdf });
-        if (!docx || !pdf) setTimeout(checkLibs, 1000);
-      };
-      checkLibs();
-
-      const envKey = process.env.API_KEY;
-      if (envKey && envKey !== 'undefined' && envKey.length > 5) {
-        setHasKey(true);
-      } else {
-        try {
-          const selected = await window.aistudio.hasSelectedApiKey();
-          setHasKey(!!selected);
-        } catch (e) {
-          setHasKey(false);
-        }
-      }
+    const checkLibs = () => {
+      const docx = typeof window.mammoth !== 'undefined';
+      const pdf = typeof window.pdfjsLib !== 'undefined';
+      setLibsReady({ docx, pdf });
+      if (!docx || !pdf) setTimeout(checkLibs, 500);
     };
-    checkStatus();
+    checkLibs();
   }, []);
 
-  const handleKeySelection = async () => {
-    try {
-      await window.aistudio.openSelectKey();
-      setHasKey(true);
-    } catch (e) { console.error("Key selection failed"); }
-  };
-
   const performTranslation = async (currentChunks: DocumentChunk[], targetLang: string) => {
-    const envKey = process.env.API_KEY;
-    if (!envKey || envKey === 'undefined') {
-      setState(p => ({ ...p, isProcessing: false, statusMessage: 'Waiting for Key...' }));
-      await handleKeySelection();
-      return;
-    }
-
     setState(prev => ({ ...prev, isProcessing: true, statusMessage: 'Analyzing Real Estate Terms...' }));
 
     try {
@@ -127,18 +94,16 @@ const App: React.FC = () => {
         statusMessage: 'Translation Optimized' 
       }));
     } catch (err: any) {
-      if (err.message?.includes("Requested entity was not found")) {
-        setHasKey(false);
-        await handleKeySelection();
-      }
-      setState(prev => ({ ...prev, isProcessing: false, error: err.message }));
+      setState(prev => ({ ...prev, isProcessing: false, error: err.message || "Translation failed. Please try again." }));
     }
   };
 
   const handleFileUpload = useCallback(async (file: File) => {
     const ext = file.name.split('.').pop()?.toLowerCase();
+    
+    // Check libraries at runtime
     if ((ext === 'docx' && !libsReady.docx) || (ext === 'pdf' && !libsReady.pdf)) {
-      setState(p => ({ ...p, error: "System warming up... try again in 3 seconds." }));
+      setState(p => ({ ...p, error: "Engines are warming up... Please try again in a few seconds." }));
       return;
     }
 
@@ -162,7 +127,7 @@ const App: React.FC = () => {
       
       await performTranslation(processed.chunks, state.targetLang);
     } catch (err: any) {
-      setState(prev => ({ ...prev, isProcessing: false, error: err.message }));
+      setState(prev => ({ ...prev, isProcessing: false, error: err.message || "File processing failed." }));
     }
   }, [libsReady, state.targetLang]);
 
@@ -170,7 +135,7 @@ const App: React.FC = () => {
     const translatedExists = state.chunks.some(c => c.translatedText);
     if (!translatedExists) return;
 
-    let html = "<html><head><style>body{font-family:serif;padding:40px;line-height:1.5;}h2{text-align:center;border-bottom:2px solid #000;padding-bottom:10px;}p{margin-bottom:15px;}</style></head><body>";
+    let html = "<html><head><meta charset='UTF-8'><style>body{font-family:serif;padding:40px;line-height:1.5;}h2{text-align:center;border-bottom:2px solid #000;padding-bottom:10px;}p{margin-bottom:15px;}</style></head><body>";
     state.chunks.forEach(chunk => {
       const text = chunk.translatedText || "";
       if (chunk.type === 'empty-line') html += "<br/>";
@@ -184,7 +149,7 @@ const App: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `Portfolio_Trans_${state.originalFileName}.doc`;
+    link.download = `Translated_${state.originalFileName}.doc`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -204,25 +169,21 @@ const App: React.FC = () => {
       <Header theme={theme} toggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} />
       
       <main className="max-w-7xl mx-auto px-6 py-10">
-        {!hasKey && (
-          <div className="mb-10 p-8 bg-indigo-50 dark:bg-indigo-950/20 border border-indigo-200 dark:border-indigo-900/50 rounded-[2.5rem] flex flex-col md:flex-row items-center justify-between gap-8 shadow-xl">
-            <div className="flex items-center gap-6">
-              <div className="bg-indigo-600 p-4 rounded-2xl text-white shadow-lg">
-                <Building className="w-8 h-8" />
-              </div>
-              <div>
-                <h3 className="text-xl font-black tracking-tight">Enterprise Key Required</h3>
-                <p className="text-slate-600 dark:text-slate-400 mt-1">Select a project with billing enabled for high-precision Real Estate mapping.</p>
-              </div>
+        {state.error && (
+          <div className="mb-10 p-6 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 rounded-[2rem] flex items-start gap-5 shadow-lg animate-in fade-in slide-in-from-top-4">
+            <AlertCircle className="w-6 h-6 text-rose-600 mt-1" />
+            <div className="flex-1">
+              <h4 className="font-bold text-rose-900 dark:text-rose-100 uppercase tracking-tighter">System Alert</h4>
+              <p className="text-sm text-rose-800 dark:text-rose-300">{state.error}</p>
+              <button onClick={() => setState(p => ({...p, error: null}))} className="mt-3 text-xs font-black text-rose-600 hover:underline uppercase tracking-widest">Dismiss</button>
             </div>
-            <button onClick={handleKeySelection} className="px-12 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl transition-all active:scale-95">Connect Portfolio</button>
           </div>
         )}
 
         {state.chunks.length === 0 ? (
-          <div className="space-y-16 py-12 text-center">
+          <div className="space-y-16 py-12 text-center animate-in fade-in duration-700">
             <div className="max-w-4xl mx-auto space-y-6">
-              <div className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 rounded-full text-[10px] font-black uppercase tracking-widest mb-4">
+              <div className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 rounded-full text-[10px] font-black uppercase tracking-widest mb-4 shadow-sm">
                 <ShieldCheck className="w-3 h-3" />
                 Real Estate Precision Protocol Active
               </div>
@@ -230,7 +191,7 @@ const App: React.FC = () => {
                 Asset <br/><span className="text-indigo-600">Sync.</span>
               </h1>
               <p className="text-xl text-slate-500 dark:text-slate-400 font-medium max-w-2xl mx-auto leading-relaxed">
-                Automated translation for <span className="text-slate-900 dark:text-slate-100 font-bold">Lease Contracts, Amendments, and Invoices</span> with full structural integrity.
+                Automated translation for <span className="text-slate-900 dark:text-slate-100 font-bold">Lease Contracts, Amendments, and Invoices</span> with domain-aware structural integrity.
               </p>
             </div>
             
@@ -245,17 +206,19 @@ const App: React.FC = () => {
           </div>
         ) : (
           <div className="space-y-10 animate-in slide-in-from-bottom-8 duration-500">
+            {/* Action Bar */}
             <div className="sticky top-24 z-40 flex flex-wrap items-center justify-between gap-6 bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl p-6 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 shadow-2xl">
               <div className="flex items-center gap-6">
                 <button 
                   onClick={reset}
                   className="p-4 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-all text-slate-500"
+                  title="New Translation"
                 >
                   <RefreshCcw className="w-6 h-6" />
                 </button>
                 <div className="h-10 w-[2px] bg-slate-200 dark:bg-slate-800 hidden md:block"></div>
                 <div className="flex flex-col">
-                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Lease/Invoice Sync</span>
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Processing File</span>
                   <span className="font-bold text-sm truncate max-w-[200px]">{state.originalFileName}</span>
                 </div>
               </div>
@@ -291,7 +254,7 @@ const App: React.FC = () => {
                 <button 
                   onClick={handleDownloadDoc}
                   disabled={state.isProcessing}
-                  className="flex items-center gap-4 px-10 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl shadow-indigo-600/30 active:scale-95 transition-all"
+                  className="flex items-center gap-4 px-10 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl shadow-indigo-600/30 active:scale-95 transition-all disabled:opacity-50"
                 >
                   <Download className="w-5 h-5" />
                   Export Legalized
@@ -299,22 +262,23 @@ const App: React.FC = () => {
               </div>
             </div>
 
+            {/* Document Side-by-Side View */}
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-10">
               {showSource && (
                 <div className="space-y-4">
-                  <div className="px-6 py-2 bg-slate-200/50 dark:bg-slate-800/50 rounded-t-2xl text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">
-                    Draft Document
+                  <div className="px-6 py-2 bg-slate-200/50 dark:bg-slate-800/50 rounded-t-2xl text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 border border-slate-200 dark:border-slate-800">
+                    Draft / Original
                   </div>
                   <DocumentPreview chunks={state.chunks} mode="original" />
                 </div>
               )}
               
               <div className={showSource ? "space-y-4" : "col-span-2 space-y-4"}>
-                <div className="px-6 py-2 bg-indigo-600 rounded-t-2xl text-[10px] font-black uppercase tracking-[0.3em] text-white flex items-center justify-between">
+                <div className="px-6 py-2 bg-indigo-600 rounded-t-2xl text-[10px] font-black uppercase tracking-[0.3em] text-white flex items-center justify-between shadow-lg">
                   <span>Authorized Translation</span>
                   <div className="flex items-center gap-2">
                     <Building className="w-3 h-3 fill-white" />
-                    <span>Property Precision Mode</span>
+                    <span>Real Estate Mode</span>
                   </div>
                 </div>
                 <DocumentPreview chunks={state.chunks} mode="translated" />
