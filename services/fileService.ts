@@ -21,11 +21,17 @@ export class FileService {
     if (extension === 'txt') {
       chunks = await this.processTxt(file);
     } else if (extension === 'docx') {
+      if (typeof mammoth === 'undefined') {
+        throw new Error("Word processing engine is still initializing. Please wait.");
+      }
       chunks = await this.processDocx(file);
     } else if (extension === 'pdf') {
+      if (typeof pdfjsLib === 'undefined') {
+        throw new Error("PDF processing engine is still initializing. Please wait.");
+      }
       chunks = await this.processPdf(file);
     } else {
-      throw new Error("Unsupported file format.");
+      throw new Error("Unsupported file format. Please use PDF, DOCX, or TXT.");
     }
 
     return {
@@ -140,7 +146,7 @@ export class FileService {
       return chunks;
     } catch (err) {
       console.error("DOCX extraction error:", err);
-      throw new Error("Structure scan failed on this DOCX.");
+      throw new Error("Word document extraction failed. The file might be corrupted or protected.");
     }
   }
 
@@ -192,7 +198,7 @@ export class FileService {
       return chunks;
     } catch (err) {
       console.error("PDF parsing error:", err);
-      return [];
+      throw new Error("PDF mapping failed. This file might be an image-only scan; please try the Neural Vision mode.");
     }
   }
 }
