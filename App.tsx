@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { TranslationState, DocumentChunk, TranslationTone } from './types';
 import { fileService } from './services/fileService';
 import { geminiService } from './services/geminiService';
-import { TRANSLATION_TONES } from './constants';
+import { TRANSLATION_TONES, GEMINI_MODEL } from './constants';
 import Header from './components/Header';
 import Footer from './components/Footer';
 import LanguagePicker from './components/LanguagePicker';
@@ -27,22 +27,25 @@ import {
   ExternalLink,
   ShieldCheck,
   ScanText,
-  AlertTriangle
+  AlertTriangle,
+  RefreshCcw,
+  Zap
 } from 'lucide-react';
 
 declare global {
-  var aistudio: {
-    hasSelectedApiKey: () => Promise<boolean>;
-    openSelectKey: () => Promise<void>;
-  };
+  interface Window {
+    aistudio: {
+      hasSelectedApiKey: () => Promise<boolean>;
+      openSelectKey: () => Promise<void>;
+    };
+  }
 }
 
+// Completed the truncated App component and added missing logic and default export.
 const App: React.FC = () => {
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [showGlossary, setShowGlossary] = useState(false);
   const [showSource, setShowSource] = useState(true);
-  const [inputMode, setInputMode] = useState<'file' | 'text'>('file');
-  const [rawText, setRawText] = useState('');
   const [hasKey, setHasKey] = useState<boolean | null>(null);
   
   const [state, setState] = useState<TranslationState>({
@@ -62,10 +65,14 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const initKeyCheck = async () => {
-      if (process.env.API_KEY && process.env.API_KEY !== 'undefined' && process.env.API_KEY.length > 10) {
+      // Priority 1: Check for valid Gemini prefix (AIza...)
+      const currentKey = process.env.API_KEY || '';
+      if (currentKey.startsWith('AIza')) {
         setHasKey(true);
         return;
       }
+      
+      // Priority 2: Standard platform check
       try {
         const selected = await window.aistudio.hasSelectedApiKey();
         setHasKey(selected);
@@ -74,7 +81,7 @@ const App: React.FC = () => {
       }
     };
     initKeyCheck();
-  }, []);
+  }, [state.error]);
 
   const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
   const toggleSource = () => setShowSource(prev => !prev);
@@ -82,7 +89,7 @@ const App: React.FC = () => {
   const handleKeySelection = async () => {
     try {
       await window.aistudio.openSelectKey();
-      // Assume selection success as per SDK rules
+      // Assume success immediately to allow the user to proceed to the app logic.
       setHasKey(true);
       if (state.error) setState(p => ({ ...p, error: null }));
     } catch (e) {
@@ -95,7 +102,7 @@ const App: React.FC = () => {
       ...prev, 
       isProcessing: true, 
       progress: 10, 
-      statusMessage: 'Scanning Structural Fidelity...',
+      statusMessage: 'Scanning Layout Fidelity...',
       error: null, 
       originalFileName: file.name 
     }));
@@ -107,7 +114,7 @@ const App: React.FC = () => {
         originalFileData: processed.fileData,
         mimeType: processed.mimeType,
         progress: 30,
-        statusMessage: processed.chunks.length > 0 ? 'Document Mapped.' : 'Vision Engine Ready.',
+        statusMessage: processed.chunks.length > 0 ? 'Document Mapped.' : 'Vision Engine Prime.',
         isProcessing: false,
         originalFileType: file.name.split('.').pop() || 'pdf'
       }));
@@ -115,20 +122,20 @@ const App: React.FC = () => {
       setState(prev => ({ 
         ...prev, 
         isProcessing: false, 
-        error: `Structure Scan Error: ${err.message}`, 
+        error: `Structure Error: ${err.message}`, 
         statusMessage: 'Fail.' 
       }));
     }
   };
 
   const startTranslation = async () => {
-    const currentKey = process.env.API_KEY;
-
-    // DIAGNOSTIC: Detect OpenAI keys which cause the "Entity Not Found" error
-    if (currentKey && currentKey.startsWith('sk-')) {
+    const currentKey = process.env.API_KEY || '';
+    
+    // Diagnostic Block: Detect OpenAI key strings (Common User Error)
+    if (currentKey.startsWith('sk-')) {
       setState(prev => ({ 
         ...prev, 
-        error: "Incorrect Key Provider detected. You are using an OpenAI key (sk-...), but ReTrans requires a Google Gemini API Key (AIza...). Please select a Gemini key from your Google Cloud project."
+        error: "Engine Conflict: An OpenAI key (sk-...) was detected. ReTrans is built on the Google Gemini SDK. Please select a Google Gemini API key (starts with AIza) to proceed."
       }));
       setHasKey(false);
       return;
@@ -136,7 +143,7 @@ const App: React.FC = () => {
 
     if (!currentKey || currentKey === 'undefined' || currentKey.length < 5) {
       await handleKeySelection();
-      // Proceeding immediately as per system instructions
+      // Continue execution to let the platform injection happen.
     }
 
     const isImageBased = (state.chunks.length === 0 || state.chunks.every(c => !c.originalText.trim())) && state.originalFileData;
@@ -146,7 +153,7 @@ const App: React.FC = () => {
       isProcessing: true, 
       error: null, 
       progress: 40, 
-      statusMessage: isImageBased ? 'Fidelity Vision Scan...' : 'Neural Context Alignment...' 
+      statusMessage: isImageBased ? 'Fidelity Vision Scan...' : 'Neural Mirror Alignment...' 
     }));
     
     try {
@@ -162,7 +169,7 @@ const App: React.FC = () => {
           chunks: ocrChunks,
           isProcessing: false,
           progress: 100,
-          statusMessage: 'Fidelity Translation Ready.'
+          statusMessage: 'Vision Optimized.'
         }));
       } else {
         let finalSourceLang = state.sourceLang;
@@ -190,25 +197,20 @@ const App: React.FC = () => {
           chunks: translatedChunks,
           isProcessing: false,
           progress: 100,
-          statusMessage: 'Contextual Translation Ready.'
+          statusMessage: 'Fidelity Translation Ready.'
         }));
       }
     } catch (err: any) {
-      const errorMsg = err.message || "";
-      const isEntityNotFoundError = errorMsg.includes("Requested entity was not found");
-      const isAuthError = errorMsg.includes("API key") || errorMsg.includes("An API Key must be set");
-
-      if (isEntityNotFoundError || isAuthError) {
-        setHasKey(false);
-        // Do not immediately reopen to avoid infinite loops, but prompt user clearly
-      }
+      const msg = err.message || "";
+      const isEntityError = msg.includes("Requested entity was not found") || msg.includes("not found");
+      const isAuthError = msg.includes("API key") || msg.includes("API_KEY_NOT_FOUND");
 
       setState(prev => ({ 
         ...prev, 
         isProcessing: false, 
-        error: isEntityNotFoundError 
-          ? 'Google Gemini Engine Error: The model "gemini-3" is not enabled or available for your project. Ensure your key is a GOOGLE GEMINI key (starting with AIza) and that the project is in a supported region.'
-          : (isAuthError ? 'Active Google Gemini API Key Required. OpenAI keys (sk-...) are not supported.' : errorMsg), 
+        error: isEntityError 
+          ? "The requested neural model (" + GEMINI_MODEL + ") is unavailable. This typically means the API key used is from a different provider or project region." 
+          : (isAuthError ? "Google Gemini authentication failed. Verify you are using a Gemini API Key from a paid project." : msg), 
         progress: 0, 
         statusMessage: 'Engine Fault.' 
       }));
@@ -222,255 +224,218 @@ const App: React.FC = () => {
       
     if (!hasContent) return;
 
+    let contentHtml = "";
+    state.chunks.forEach(chunk => {
+      const text = mode === 'original' ? chunk.originalText : chunk.translatedText;
+      if (chunk.type === 'empty-line') {
+        contentHtml += "<br/>";
+      } else if (chunk.type === 'heading') {
+        contentHtml += `<h${chunk.metadata?.level || 1}>${text}</h${chunk.metadata?.level || 1}>`;
+      } else if (chunk.type === 'checkbox') {
+        const mark = chunk.metadata?.isChecked ? "☑" : "☐";
+        contentHtml += `<p><span class="checkbox">${mark}</span> ${text}</p>`;
+      } else {
+        contentHtml += `<p>${text}</p>`;
+      }
+    });
+
     const htmlHeader = `
       <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
       <head>
         <meta charset='utf-8'>
         <style>
-          body { font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.5; color: #1a202c; padding: 40px; }
+          body { font-family: 'Segoe UI', sans-serif; line-height: 1.5; color: #1a202c; padding: 40px; }
           h1, h2, h3, h4, h5, h6 { font-size: 14pt; font-weight: bold; margin-bottom: 12pt; color: #000; }
           p { margin-bottom: 11pt; text-align: justify; font-size: 11pt; }
           table { border-collapse: collapse; width: 100%; margin: 15pt 0; border: 1.5pt solid #cbd5e0; }
-          td, th { border: 1pt solid #cbd5e0; padding: 10pt; font-size: 10pt; vertical-align: top; }
+          td, th { border: 1pt solid #cbd5e0; padding: 12pt; font-size: 10pt; vertical-align: top; }
           .bold { font-weight: bold; }
           .italic { font-style: italic; }
           .underline { text-decoration: underline; text-underline-offset: 2pt; }
-          .checkbox { font-family: 'Segoe UI Symbol', sans-serif; margin-right: 8pt; font-size: 14pt; }
-          .empty-line { height: 18pt; width: 100%; }
+          .checkbox { font-family: 'Segoe UI Symbol', sans-serif; }
         </style>
       </head>
       <body>
+        ${contentHtml}
+      </body>
+      </html>
     `;
 
-    let bodyContent = "";
-    let inTable = false;
-
-    state.chunks.forEach((chunk) => {
-      const text = mode === 'translated' ? (chunk.translatedText || chunk.originalText) : chunk.originalText;
-      const weightClass = chunk.metadata?.isBold || chunk.type === 'heading' ? "bold" : "";
-      const italicClass = chunk.metadata?.isItalic ? "italic" : "";
-      const underlineClass = chunk.metadata?.isUnderlined ? "underline" : "";
-      const align = chunk.metadata?.alignment || "left";
-
-      if (chunk.type === 'empty-line') {
-        if (inTable) { bodyContent += `</tr></table>`; inTable = false; }
-        bodyContent += `<div class="empty-line"></div>`;
-        return;
-      }
-
-      if (chunk.type === 'table-cell') {
-        if (!inTable) { bodyContent += `<table><tr>`; inTable = true; }
-        bodyContent += `<td style="text-align:${align}" class="${weightClass} ${italicClass} ${underlineClass}">${text}</td>`;
-      } else {
-        if (inTable) { bodyContent += `</tr></table>`; inTable = false; }
-
-        if (chunk.type === 'heading') {
-          const level = chunk.metadata?.level || 1;
-          bodyContent += `<h${level} style="text-align:${align}" class="bold ${underlineClass}">${text}</h${level}>`;
-        } else if (chunk.type === 'checkbox') {
-          const box = chunk.metadata?.isChecked ? "☑" : "☐";
-          bodyContent += `<p style="text-align:${align}" class="${weightClass} ${italicClass} ${underlineClass}"><span class="checkbox">${box}</span>${text}</p>`;
-        } else {
-          bodyContent += `<p style="text-align:${align}" class="${weightClass} ${italicClass} ${underlineClass}">${text}</p>`;
-        }
-      }
-    });
-
-    if (inTable) bodyContent += `</tr></table>`;
-
-    const htmlFooter = `</body></html>`;
-    const fullHtml = htmlHeader + bodyContent + htmlFooter;
-    
-    const blob = new Blob(['\ufeff', fullHtml], { type: 'application/msword' });
+    const blob = new Blob(['\ufeff', htmlHeader], { type: 'application/msword' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    
-    const baseName = state.originalFileName ? state.originalFileName.replace(/\.[^/.]+$/, "") : "Document";
-    const suffix = mode === 'original' ? '_ORIGINAL' : '_TRANSLATED';
-    
-    link.download = `ReTrans_${baseName}${suffix}.doc`;
+    link.download = `${mode === 'original' ? 'Original' : 'Translated'}_${state.originalFileName || 'Document'}.doc`;
+    document.body.appendChild(link);
     link.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const reset = () => {
-    setState({
-      isProcessing: false,
-      progress: 0,
-      statusMessage: '',
-      error: null,
-      originalFileName: null,
-      originalFileType: null,
-      chunks: [],
-      sourceLang: 'auto',
-      targetLang: 'en',
-      tone: 'professional',
-      groundingEnabled: false,
-      glossary: [],
-    });
-    setRawText('');
-    setShowSource(true);
+    document.body.removeChild(link);
   };
 
   return (
-    <div className={`min-h-screen transition-all duration-500 ${theme === 'dark' ? 'dark bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
+    <div className={`${theme === 'dark' ? 'dark' : ''} min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors`}>
       <Header theme={theme} toggleTheme={toggleTheme} />
-      <main className="max-w-[1600px] mx-auto px-6 lg:px-12 py-12">
-        {!state.originalFileName ? (
-          <section className="space-y-16 animate-in fade-in slide-in-from-bottom-4 duration-700">
-            <div className="text-center space-y-10 max-w-5xl mx-auto">
-              <div className="flex justify-center mb-6">
-                <span className="px-6 py-2 rounded-2xl text-[11px] font-black uppercase tracking-[0.4em] bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 border border-blue-100 dark:border-blue-800 shadow-sm">
-                  Neural Fidelity Mirror
-                </span>
+      
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+        {!hasKey && (
+          <div className="mb-8 p-6 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-6 shadow-sm">
+            <div className="flex items-center gap-4">
+              <div className="bg-amber-100 dark:bg-amber-900/50 p-3 rounded-xl text-amber-600 dark:text-amber-400">
+                <Key className="w-6 h-6" />
               </div>
-              <h1 className="text-6xl md:text-8xl font-black tracking-tighter leading-none font-serif text-[#001a33] dark:text-white">
-                Contextual.<br />
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-700 via-blue-500 to-indigo-600">Enterprise Ready.</span>
-              </h1>
-              <p className="text-xl text-slate-500 dark:text-slate-400 max-w-3xl mx-auto font-medium leading-relaxed">
-                Translate complex enterprise files while maintaining perfect structural layout and semantic depth.
-              </p>
+              <div>
+                <h3 className="font-bold text-amber-900 dark:text-amber-100">API Configuration Required</h3>
+                <p className="text-sm text-amber-700 dark:text-amber-300">
+                  Select a Google Gemini API key to enable document translation services.
+                </p>
+              </div>
             </div>
-            <div className="max-w-4xl mx-auto">
-              {!hasKey && (
-                <div className="mb-8 p-6 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-3xl flex flex-col md:flex-row items-center justify-between gap-4 shadow-xl">
-                  <div className="flex items-center gap-4 text-amber-800 dark:text-amber-400">
-                    <AlertTriangle className="w-8 h-8 flex-shrink-0" />
-                    <div>
-                      <p className="font-bold text-sm">Action Required: Key Type Conflict</p>
-                      <p className="text-xs opacity-90">OpenAI keys (sk-...) will fail. Connect a **Google Gemini Key** (AIza...) to start.</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener" className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-amber-700 hover:underline">
-                      Get Gemini Key <ExternalLink className="w-3 h-3" />
-                    </a>
-                    <button onClick={handleKeySelection} className="bg-amber-600 text-white px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-amber-600/20">
-                      Link Gemini
-                    </button>
-                  </div>
-                </div>
-              )}
+            <button 
+              onClick={handleKeySelection}
+              className="px-6 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-sm shadow-lg shadow-amber-600/20 transition-all flex items-center gap-2"
+            >
+              Configure API Key <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+        )}
 
-              <div className="flex justify-center mb-10">
-                <div className="bg-white/80 dark:bg-slate-900/80 p-1.5 rounded-2xl flex gap-1 border border-slate-200 dark:border-slate-800 shadow-xl">
-                  <button onClick={() => setInputMode('file')} className={`flex items-center gap-2 px-8 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${inputMode === 'file' ? 'bg-blue-600 shadow-lg text-white' : 'text-slate-400'}`}>
-                    <FileText className="w-3.5 h-3.5" /> Document Upload
-                  </button>
-                  <button onClick={() => setInputMode('text')} className={`flex items-center gap-2 px-8 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${inputMode === 'text' ? 'bg-blue-600 shadow-lg text-white' : 'text-slate-400'}`}>
-                    <Type className="w-3.5 h-3.5" /> Manual Entry
-                  </button>
-                </div>
-              </div>
-              <div className="relative bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[2.5rem] shadow-2xl p-6 min-h-[400px]">
-                {inputMode === 'file' ? <FileUploader onUpload={handleFileUpload} /> : (
-                  <div className="h-full flex flex-col gap-6">
-                    <textarea className="flex-1 bg-transparent border-none focus:ring-0 text-xl font-medium placeholder:text-slate-300 resize-none min-h-[300px]" placeholder="Paste document content..." value={rawText} onChange={(e) => setRawText(e.target.value)} />
-                    <div className="flex justify-end pt-4 border-t border-slate-100 dark:border-slate-800">
-                      <button onClick={() => setState(p => ({...p, originalFileName: 'Draft', chunks: rawText.split('\n').map((l,i)=>({id:`t-${i}`,type:l.trim()?'paragraph':'empty-line',originalText:l}))}))} className="bg-blue-600 text-white px-10 py-4 rounded-xl font-black uppercase tracking-widest shadow-xl flex items-center gap-3">Process Content <ArrowRight className="w-5 h-5" /></button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </section>
-        ) : (
-          <div className="space-y-8 animate-in fade-in duration-700">
-            <div className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl p-6 rounded-[2rem] border border-slate-200 dark:border-slate-800 shadow-xl">
-              <div className="flex flex-col xl:flex-row items-center justify-between gap-8">
-                <div className="flex flex-wrap items-center gap-3">
-                  <div className="bg-white dark:bg-slate-800 p-3 px-5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm min-w-[160px]"><label className="text-[9px] font-black uppercase tracking-[0.3em] text-blue-600 block mb-0.5">Source</label><LanguagePicker value={state.sourceLang} onChange={(v) => setState(p => ({ ...p, sourceLang: v }))} /></div>
-                  <div className="text-slate-400"><ArrowRight className="w-4 h-4" /></div>
-                  <div className="bg-white dark:bg-slate-800 p-3 px-5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm min-w-[160px]"><label className="text-[9px] font-black uppercase tracking-[0.3em] text-blue-600 block mb-0.5">Target</label><LanguagePicker value={state.targetLang} onChange={(v) => setState(p => ({ ...p, targetLang: v }))} /></div>
-                  <div className="bg-white dark:bg-slate-800 p-3 px-5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm min-w-[160px] relative">
-                    <label className="text-[9px] font-black uppercase tracking-[0.3em] text-indigo-600 block mb-0.5">Context Tone</label>
-                    <select value={state.tone} onChange={(e) => setState(p => ({ ...p, tone: e.target.value as TranslationTone }))} className="bg-transparent border-none p-0 focus:ring-0 font-bold text-slate-700 dark:text-white cursor-pointer w-full appearance-none">
-                      {TRANSLATION_TONES.map(t => (<option key={t.id} value={t.id}>{t.icon} {t.name}</option>))}
-                    </select><ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-4 top-1/2" />
-                  </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-4">
-                  <button onClick={toggleSource} className={`flex items-center gap-2 px-5 py-3 rounded-xl font-bold transition-all border ${showSource ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
-                    {showSource ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />} {showSource ? 'Pure Translation' : 'Comparative View'}
-                  </button>
-                  <button onClick={() => setShowGlossary(true)} className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 transition-colors"><Book className="w-4 h-4" /> Glossary</button>
-                  <button onClick={startTranslation} disabled={state.isProcessing} className="bg-blue-600 text-white px-10 py-3 rounded-xl font-black uppercase tracking-widest shadow-lg flex items-center gap-3 hover:bg-blue-700 transition-all">
-                    {state.isProcessing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Globe className="w-5 h-5" />}
-                    {state.isProcessing ? 'Translating...' : 'Start Translation'}
-                  </button>
-                  <button onClick={reset} className="text-slate-400 hover:text-red-500 font-black text-[10px] uppercase tracking-[0.2em] ml-2">Reset</button>
-                </div>
-              </div>
-              {state.statusMessage && (
-                <div className="mt-4 flex items-center justify-center gap-2 text-blue-600 font-black text-[9px] uppercase tracking-[0.3em]">
-                  {state.progress === 100 ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Loader2 className="w-3.5 h-3.5 animate-spin" />} {state.statusMessage}
-                </div>
+        {state.error && (
+          <div className="mb-8 p-4 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 rounded-2xl flex items-start gap-4">
+            <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-red-800 dark:text-red-200">{state.error}</p>
+              {state.error.includes("entity was not found") && (
+                <button 
+                  onClick={handleKeySelection}
+                  className="mt-2 text-xs font-bold text-red-600 dark:text-red-400 underline hover:no-underline"
+                >
+                  Change API Key Connection
+                </button>
               )}
-            </div>
-            
-            <div className={`grid gap-8 min-h-[75vh] transition-all duration-500 ${showSource ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1 max-w-4xl mx-auto'}`}>
-              {showSource && (
-                <div className="flex flex-col bg-white dark:bg-slate-900 rounded-[2rem] border border-slate-200 dark:border-slate-800 shadow-lg overflow-hidden animate-in slide-in-from-left-4 duration-500">
-                  <div className="px-8 py-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50">
-                    <h3 className="font-black text-[10px] uppercase tracking-[0.3em] text-slate-400">Source Capture</h3>
-                    {state.chunks.length > 0 && (
-                      <button 
-                        onClick={() => handleDownloadDoc('original')} 
-                        className="bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-4 py-1.5 rounded-lg text-[9px] font-black tracking-widest flex items-center gap-2 hover:bg-slate-300 transition-colors"
-                      >
-                        <ScanText className="w-3.5 h-3.5" /> SAVE ORIGINAL
-                      </button>
-                    )}
-                  </div>
-                  <div className="flex-1 overflow-y-auto p-4 md:p-10">
-                    <DocumentPreview chunks={state.chunks} mode="original" />
-                  </div>
-                </div>
-              )}
-              <div className="flex flex-col bg-white dark:bg-slate-900 rounded-[2rem] border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden relative transition-all duration-500">
-                <div className="px-8 py-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-blue-50/10">
-                  <h3 className="font-black text-[10px] uppercase tracking-[0.3em] text-blue-600">Enterprise Fidelity</h3>
-                  {state.progress === 100 && (
-                    <button onClick={() => handleDownloadDoc('translated')} className="bg-blue-600 text-white px-6 py-2 rounded-lg text-[9px] font-black tracking-widest flex items-center gap-2 hover:bg-blue-700 transition-colors">
-                      <Download className="w-3.5 h-3.5" /> EXPORT PROFESSIONAL
-                    </button>
-                  )}
-                </div>
-                <div className="flex-1 overflow-y-auto p-4 md:p-10">
-                  {state.error ? (
-                    <div className="h-full flex flex-col items-center justify-center text-center p-10 space-y-4">
-                      <div className="bg-red-50 dark:bg-red-900/10 p-4 rounded-full">
-                        <AlertCircle className="w-12 h-12 text-red-500" />
-                      </div>
-                      <h4 className="text-xl font-bold">Engine Conflict Detected</h4>
-                      <p className="text-slate-500 text-sm max-w-lg mx-auto leading-relaxed">{state.error}</p>
-                      
-                      <div className="flex flex-col gap-4 items-center mt-6">
-                        <div className="flex gap-4">
-                          <button onClick={startTranslation} className="bg-slate-900 text-white px-8 py-3 rounded-xl font-bold text-sm flex items-center gap-2 shadow-lg hover:bg-slate-800">
-                            Retry Mirror
-                          </button>
-                          <button onClick={handleKeySelection} className="bg-blue-600 text-white px-8 py-3 rounded-xl font-bold text-sm flex items-center gap-2 shadow-lg hover:bg-blue-700">
-                            <Key className="w-4 h-4" /> Link Google Key
-                          </button>
-                        </div>
-                        <p className="text-[9px] uppercase tracking-widest text-slate-400 font-black">
-                          Note: You MUST use a Gemini API key starting with "AIza..."
-                        </p>
-                      </div>
-                    </div>
-                  ) : (
-                    <DocumentPreview chunks={state.chunks} mode="translated" />
-                  )}
-                </div>
-              </div>
             </div>
           </div>
         )}
+
+        {state.chunks.length === 0 ? (
+          <div className="space-y-12 py-10">
+            <div className="text-center max-w-2xl mx-auto space-y-4">
+              <h1 className="text-4xl md:text-5xl font-black tracking-tight text-slate-900 dark:text-white">
+                Structural Document <span className="text-blue-600">Translation</span>
+              </h1>
+              <p className="text-lg text-slate-500 dark:text-slate-400">
+                Preserve layout, tables, and checkboxes with neural-vision accuracy. 
+                Upload a PDF, DOCX, or TXT to begin.
+              </p>
+            </div>
+            <FileUploader onUpload={handleFileUpload} />
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
+            <div className="xl:col-span-12 flex flex-wrap items-center justify-between gap-4 bg-white dark:bg-slate-900 p-4 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm">
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-2xl">
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Target</span>
+                  <LanguagePicker value={state.targetLang} onChange={(val) => setState(p => ({ ...p, targetLang: val }))} />
+                </div>
+                
+                <div className="hidden sm:flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-2xl">
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Tone</span>
+                  <select 
+                    value={state.tone} 
+                    onChange={(e) => setState(p => ({ ...p, tone: e.target.value as TranslationTone }))}
+                    className="bg-transparent border-none focus:ring-0 font-semibold text-sm cursor-pointer"
+                  >
+                    {TRANSLATION_TONES.map(t => (
+                      <option key={t.id} value={t.id}>{t.icon} {t.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button 
+                  onClick={() => setShowGlossary(true)}
+                  className="p-3 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors relative"
+                  title="Glossary"
+                >
+                  <Book className="w-5 h-5" />
+                  {state.glossary.length > 0 && (
+                    <span className="absolute top-2 right-2 w-2 h-2 bg-blue-600 rounded-full"></span>
+                  )}
+                </button>
+                
+                <button 
+                  onClick={toggleSource}
+                  className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl font-bold text-sm transition-all ${showSource ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600'}`}
+                >
+                  {showSource ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                  {showSource ? 'Hide Source' : 'Show Source'}
+                </button>
+
+                <button 
+                  onClick={startTranslation}
+                  disabled={state.isProcessing}
+                  className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-2xl font-bold text-sm shadow-lg shadow-blue-600/20 transition-all"
+                >
+                  {state.isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                  {state.isProcessing ? 'Processing...' : 'Translate'}
+                </button>
+
+                <div className="h-8 w-px bg-slate-200 dark:bg-slate-800 mx-2"></div>
+
+                <button 
+                  onClick={() => handleDownloadDoc('translated')}
+                  disabled={!state.chunks.some(c => c.translatedText)}
+                  className="p-3 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl hover:opacity-90 disabled:opacity-30 transition-all"
+                >
+                  <Download className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className={`${showSource ? 'xl:col-span-6' : 'xl:col-span-12'} transition-all duration-500`}>
+              <div className="flex items-center justify-between mb-4 px-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-slate-400 rounded-full"></div>
+                  <span className="text-xs font-black uppercase tracking-widest text-slate-400">Original Content</span>
+                </div>
+                <button 
+                  onClick={() => setState(p => ({ ...p, chunks: [], originalFileName: null }))}
+                  className="text-xs font-bold text-slate-400 hover:text-red-500 transition-colors flex items-center gap-1"
+                >
+                  <RefreshCcw className="w-3 h-3" /> Start Over
+                </button>
+              </div>
+              <DocumentPreview chunks={state.chunks} mode="original" />
+            </div>
+
+            {showSource && (
+              <div className="xl:col-span-6 animate-in slide-in-from-right-4 duration-500">
+                <div className="flex items-center justify-between mb-4 px-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></div>
+                    <span className="text-xs font-black uppercase tracking-widest text-blue-600">Translated Neural Output</span>
+                  </div>
+                  {state.isProcessing && (
+                    <span className="text-[10px] font-bold bg-blue-50 dark:bg-blue-900/30 text-blue-600 px-2 py-0.5 rounded-full">
+                      {state.statusMessage}
+                    </span>
+                  )}
+                </div>
+                <DocumentPreview chunks={state.chunks} mode="translated" />
+              </div>
+            )}
+          </div>
+        )}
       </main>
-      {showGlossary && <GlossaryManager glossary={state.glossary} onChange={(g) => setState(p => ({ ...p, glossary: g }))} onClose={() => setShowGlossary(false)} />}
+
+      {showGlossary && (
+        <GlossaryManager 
+          glossary={state.glossary} 
+          onChange={(g) => setState(p => ({ ...p, glossary: g }))}
+          onClose={() => setShowGlossary(false)}
+        />
+      )}
+      
       <Footer />
     </div>
   );
