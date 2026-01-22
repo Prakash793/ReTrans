@@ -50,20 +50,29 @@ export class FileService {
 
   private async processTxt(file: File): Promise<DocumentChunk[]> {
     const text = await file.text();
-    const lines = text.split(/\r?\n/).filter(line => line.trim().length > 0);
+    // Keep empty lines for structural mirroring
+    const lines = text.split(/\r?\n/);
     
-    return lines.map((line, index) => ({
-      id: `chunk-${index}`,
-      type: index === 0 ? 'heading' : 'paragraph',
-      originalText: line,
-      metadata: { alignment: 'left', isBold: index === 0, level: index === 0 ? 1 : undefined }
-    }));
+    return lines.map((line, index) => {
+      if (line.trim().length === 0) {
+        return {
+          id: `txt-empty-${index}`,
+          type: 'empty-line',
+          originalText: "",
+        };
+      }
+      return {
+        id: `chunk-${index}`,
+        type: index === 0 ? 'heading' : 'paragraph',
+        originalText: line,
+        metadata: { alignment: 'left', isBold: index === 0, level: index === 0 ? 1 : undefined }
+      };
+    });
   }
 
   private async processDocx(file: File): Promise<DocumentChunk[]> {
     try {
       const arrayBuffer = await file.arrayBuffer();
-      // Use convertToHtml to preserve structure (bold, tables, headings)
       const result = await mammoth.convertToHtml({ arrayBuffer });
       const html = result.value;
       
@@ -85,17 +94,26 @@ export class FileService {
             });
           } else if (tagName === 'p') {
             const text = el.innerText.trim();
-            if (text) {
-              chunks.push({
-                id: `docx-p-${chunks.length}`,
-                type: 'paragraph',
-                originalText: text,
-                metadata: { 
-                  isBold: el.querySelector('strong, b') !== null,
-                  isItalic: el.querySelector('em, i') !== null
-                }
-              });
+            if (!text) {
+              chunks.push({ id: `docx-e-${chunks.length}`, type: 'empty-line', originalText: "" });
+              return;
             }
+
+            // Check for checkbox characters in text
+            const checkboxMatch = text.match(/^[\[(][xX\s][\])]|^[☐☑☒]/);
+            
+            chunks.push({
+              id: `docx-p-${chunks.length}`,
+              type: checkboxMatch ? 'checkbox' : 'paragraph',
+              originalText: text,
+              metadata: { 
+                isBold: el.querySelector('strong, b') !== null,
+                isItalic: el.querySelector('em, i') !== null,
+                isUnderlined: el.querySelector('u') !== null || el.style.textDecoration.includes('underline'),
+                isCheckbox: !!checkboxMatch,
+                isChecked: text.includes('☑') || text.includes('☒') || /^[\[(][xX][\])]/.test(text)
+              }
+            });
           } else if (tagName === 'td' || tagName === 'th') {
             chunks.push({
               id: `docx-td-${chunks.length}`,
@@ -103,9 +121,12 @@ export class FileService {
               originalText: el.innerText.trim(),
               metadata: { 
                 isBold: tagName === 'th' || el.querySelector('strong, b') !== null,
+                isUnderlined: el.querySelector('u') !== null,
                 alignment: (el.style.textAlign as any) || 'left'
               }
             });
+          } else if (tagName === 'br') {
+            chunks.push({ id: `docx-br-${chunks.length}`, type: 'empty-line', originalText: "" });
           } else {
             for (let i = 0; i < el.childNodes.length; i++) {
               walk(el.childNodes[i]);
@@ -117,7 +138,7 @@ export class FileService {
       walk(doc.body);
       return chunks;
     } catch (err) {
-      console.error("DOCX structure extraction error:", err);
+      console.error("DOCX extraction error:", err);
       throw new Error("Failed to extract document structure.");
     }
   }
@@ -141,7 +162,7 @@ export class FileService {
         
         for (const item of (textContent.items as any[])) {
           const y = item.transform[5];
-          if (lastY !== -1 && Math.abs(y - lastY) > 5) {
+          if (lastY !== -1 && Math.abs(y - lastY) > 8) {
             if (currentLine.trim()) {
               chunks.push({
                 id: `pdf-p-${chunks.length}`,
@@ -149,6 +170,8 @@ export class FileService {
                 originalText: currentLine.trim(),
                 metadata: { alignment: 'left' }
               });
+            } else {
+               chunks.push({ id: `pdf-e-${chunks.length}`, type: 'empty-line', originalText: "" });
             }
             currentLine = "";
           }

@@ -25,17 +25,19 @@ import {
   CheckCircle2,
   Key,
   ExternalLink,
-  ShieldCheck
+  ShieldCheck,
+  ScanText
 } from 'lucide-react';
 
-// FIX: Declare 'aistudio' as readonly in the global Window interface to match system modifiers.
 declare global {
-  interface Window {
-    readonly aistudio: {
-      hasSelectedApiKey: () => Promise<boolean>;
-      openSelectKey: () => Promise<void>;
-    };
-  }
+  /**
+   * Defines the global aistudio interface injected by the environment.
+   * Using 'var' in declare global ensures compatibility with existing environment declarations.
+   */
+  var aistudio: {
+    hasSelectedApiKey: () => Promise<boolean>;
+    openSelectKey: () => Promise<void>;
+  };
 }
 
 const App: React.FC = () => {
@@ -83,6 +85,7 @@ const App: React.FC = () => {
   const handleKeySelection = async () => {
     try {
       await window.aistudio.openSelectKey();
+      // Assume successful selection to avoid race condition per Gemini API guidelines
       setHasKey(true);
       if (state.error) setState(p => ({ ...p, error: null }));
     } catch (e) {
@@ -122,10 +125,8 @@ const App: React.FC = () => {
   };
 
   const startTranslation = async () => {
-    // Proactive Check: Ensure key exists before starting heavy processing
     if (!hasKey) {
       await handleKeySelection();
-      // Proceeding as per rules: assume success after triggering openSelectKey
     }
 
     const isImageBased = (state.chunks.length === 0 || state.chunks.every(c => !c.originalText.trim())) && state.originalFileData;
@@ -187,7 +188,6 @@ const App: React.FC = () => {
       const isEntityError = err.message?.includes("entity was not found");
 
       if (isEntityError) {
-        // Rule: reset key selection state and prompt again
         handleKeySelection();
       }
 
@@ -203,9 +203,12 @@ const App: React.FC = () => {
     }
   };
 
-  const handleDownloadDoc = () => {
-    const hasTranslation = state.chunks.some(c => c.translatedText);
-    if (!hasTranslation) return;
+  const handleDownloadDoc = (mode: 'original' | 'translated') => {
+    const hasContent = mode === 'original' 
+      ? state.chunks.length > 0 
+      : state.chunks.some(c => c.translatedText);
+      
+    if (!hasContent) return;
 
     const htmlHeader = `
       <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
@@ -219,6 +222,9 @@ const App: React.FC = () => {
           td, th { border: 1px solid #cbd5e0; padding: 8pt; font-size: 10pt; }
           .bold { font-weight: bold; }
           .italic { font-style: italic; }
+          .underline { text-decoration: underline; }
+          .checkbox { font-family: 'Segoe UI Symbol', sans-serif; margin-right: 5pt; }
+          .empty-line { height: 12pt; }
         </style>
       </head>
       <body>
@@ -228,28 +234,32 @@ const App: React.FC = () => {
     let inTable = false;
 
     state.chunks.forEach((chunk) => {
-      const text = chunk.translatedText || chunk.originalText;
+      const text = mode === 'translated' ? (chunk.translatedText || chunk.originalText) : chunk.originalText;
       const weightClass = chunk.metadata?.isBold || chunk.type === 'heading' ? "bold" : "";
       const italicClass = chunk.metadata?.isItalic ? "italic" : "";
+      const underlineClass = chunk.metadata?.isUnderlined ? "underline" : "";
       const align = chunk.metadata?.alignment || "left";
 
+      if (chunk.type === 'empty-line') {
+        if (inTable) { bodyContent += `</tr></table>`; inTable = false; }
+        bodyContent += `<div class="empty-line"></div>`;
+        return;
+      }
+
       if (chunk.type === 'table-cell') {
-        if (!inTable) {
-          bodyContent += `<table><tr>`;
-          inTable = true;
-        }
-        bodyContent += `<td style="text-align:${align}" class="${weightClass} ${italicClass}">${text}</td>`;
+        if (!inTable) { bodyContent += `<table><tr>`; inTable = true; }
+        bodyContent += `<td style="text-align:${align}" class="${weightClass} ${italicClass} ${underlineClass}">${text}</td>`;
       } else {
-        if (inTable) {
-          bodyContent += `</tr></table>`;
-          inTable = false;
-        }
+        if (inTable) { bodyContent += `</tr></table>`; inTable = false; }
 
         if (chunk.type === 'heading') {
           const level = chunk.metadata?.level || 1;
-          bodyContent += `<h${level} style="text-align:${align}" class="bold">${text}</h${level}>`;
+          bodyContent += `<h${level} style="text-align:${align}" class="bold ${underlineClass}">${text}</h${level}>`;
+        } else if (chunk.type === 'checkbox') {
+          const box = chunk.metadata?.isChecked ? "☑" : "☐";
+          bodyContent += `<p style="text-align:${align}" class="${weightClass} ${italicClass} ${underlineClass}"><span class="checkbox">${box}</span>${text}</p>`;
         } else {
-          bodyContent += `<p style="text-align:${align}" class="${weightClass} ${italicClass}">${text}</p>`;
+          bodyContent += `<p style="text-align:${align}" class="${weightClass} ${italicClass} ${underlineClass}">${text}</p>`;
         }
       }
     });
@@ -263,8 +273,11 @@ const App: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    const baseName = state.originalFileName ? state.originalFileName.replace(/\.[^/.]+$/, "") : "Translated_Document";
-    link.download = `RETRANS_${baseName}.doc`;
+    
+    const baseName = state.originalFileName ? state.originalFileName.replace(/\.[^/.]+$/, "") : "Document";
+    const suffix = mode === 'original' ? '_OCR' : '_TRANSLATED';
+    
+    link.download = `RETRANS_${baseName}${suffix}.doc`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -309,7 +322,6 @@ const App: React.FC = () => {
               </p>
             </div>
             <div className="max-w-4xl mx-auto">
-              {/* API Key Status Banner */}
               {!hasKey && (
                 <div className="mb-8 p-6 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-3xl flex flex-col md:flex-row items-center justify-between gap-4">
                   <div className="flex items-center gap-4 text-amber-800 dark:text-amber-400">
@@ -391,7 +403,14 @@ const App: React.FC = () => {
                 <div className="flex flex-col bg-white dark:bg-slate-900 rounded-[2rem] border border-slate-200 dark:border-slate-800 shadow-lg overflow-hidden animate-in slide-in-from-left-4 duration-500">
                   <div className="px-8 py-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50">
                     <h3 className="font-black text-[10px] uppercase tracking-[0.3em] text-slate-400">Source Document</h3>
-                    <div className="text-[9px] font-bold text-slate-400 truncate max-w-[200px]">{state.originalFileName}</div>
+                    {state.chunks.length > 0 && (
+                      <button 
+                        onClick={() => handleDownloadDoc('original')} 
+                        className="bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-4 py-1.5 rounded-lg text-[9px] font-black tracking-widest flex items-center gap-2 hover:bg-slate-300 transition-colors"
+                      >
+                        <ScanText className="w-3.5 h-3.5" /> EXPORT OCR
+                      </button>
+                    )}
                   </div>
                   <div className="flex-1 overflow-y-auto p-4 md:p-10">
                     {state.chunks.length === 0 && state.originalFileData ? (
@@ -410,8 +429,8 @@ const App: React.FC = () => {
                 <div className="px-8 py-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-blue-50/10">
                   <h3 className="font-black text-[10px] uppercase tracking-[0.3em] text-blue-600">Neural Optimized Result</h3>
                   {state.progress === 100 && (
-                    <button onClick={handleDownloadDoc} className="bg-blue-600 text-white px-6 py-2 rounded-lg text-[9px] font-black tracking-widest flex items-center gap-2 hover:bg-blue-700 transition-colors">
-                      <Download className="w-3.5 h-3.5" /> EXPORT DOCX
+                    <button onClick={() => handleDownloadDoc('translated')} className="bg-blue-600 text-white px-6 py-2 rounded-lg text-[9px] font-black tracking-widest flex items-center gap-2 hover:bg-blue-700 transition-colors">
+                      <Download className="w-3.5 h-3.5" /> EXPORT RESULT
                     </button>
                   )}
                 </div>

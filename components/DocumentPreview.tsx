@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { DocumentChunk } from '../types';
 
@@ -18,12 +19,12 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ chunks, mode }) => {
       }
     };
 
-    chunks.forEach((chunk) => {
+    chunks.forEach((chunk, index) => {
       if (chunk.type === 'table-cell') {
         currentTableCells.push(chunk);
       } else {
         flushTable();
-        renderedElements.push(renderChunk(chunk));
+        renderedElements.push(renderChunk(chunk, index));
       }
     });
 
@@ -53,13 +54,14 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ chunks, mode }) => {
                     const text = mode === 'original' ? cell.originalText : cell.translatedText;
                     const weightClass = cell.metadata?.isBold ? 'font-bold' : 'font-normal';
                     const italicClass = cell.metadata?.isItalic ? 'italic' : '';
+                    const underlineClass = cell.metadata?.isUnderlined ? 'underline' : '';
                     
                     return (
                       <td
                         key={cell.id}
                         rowSpan={cell.metadata?.rowSpan}
                         colSpan={cell.metadata?.colSpan}
-                        className={`border border-slate-300 dark:border-slate-700 p-3 ${weightClass} ${italicClass} text-slate-700 dark:text-slate-300 bg-white/40 dark:bg-slate-800/20`}
+                        className={`border border-slate-300 dark:border-slate-700 p-3 ${weightClass} ${italicClass} ${underlineClass} text-slate-700 dark:text-slate-300 bg-white/40 dark:bg-slate-800/20`}
                         style={{ textAlign: cell.metadata?.alignment || 'left' }}
                       >
                         {text || (mode === 'translated' && <div className="h-4 bg-blue-50/50 dark:bg-blue-900/10 rounded animate-pulse" />)}
@@ -74,26 +76,39 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ chunks, mode }) => {
     );
   };
 
-  const renderChunk = (chunk: DocumentChunk) => {
+  const renderChunk = (chunk: DocumentChunk, index: number) => {
+    if (chunk.type === 'empty-line') {
+      return <div key={`empty-${index}`} className="h-6 w-full" />;
+    }
+
     const text = mode === 'original' ? chunk.originalText : chunk.translatedText;
     
     if (!text && mode === 'translated') {
        return (
          <div key={chunk.id} className="mb-4 space-y-2">
            <div className="h-4 w-full bg-blue-50 dark:bg-blue-900/10 rounded animate-pulse" />
-           <div className="h-4 w-5/6 bg-blue-50 dark:bg-blue-900/10 rounded animate-pulse opacity-60" />
          </div>
        );
     }
 
+    const weightClass = chunk.metadata?.isBold || chunk.type === 'heading' ? 'font-bold' : 'font-normal';
+    const italicClass = chunk.metadata?.isItalic ? 'italic' : '';
+    const underlineClass = chunk.metadata?.isUnderlined ? 'underline underline-offset-4' : '';
+
     const customStyles: React.CSSProperties = {
-      fontSize: chunk.type === 'heading' ? '14pt' : '11pt',
-      fontFamily: chunk.metadata?.fontFamily || "'Inter', sans-serif",
       textAlign: (chunk.metadata?.alignment as any) || 'left',
     };
 
-    const weightClass = chunk.metadata?.isBold || chunk.type === 'heading' ? 'font-bold' : 'font-normal';
-    const italicClass = chunk.metadata?.isItalic ? 'italic' : '';
+    if (chunk.type === 'checkbox') {
+      return (
+        <div key={chunk.id} className="flex items-start gap-3 mb-3">
+          <div className={`w-5 h-5 rounded border border-slate-300 dark:border-slate-600 flex-shrink-0 flex items-center justify-center ${chunk.metadata?.isChecked ? 'bg-blue-600 border-blue-600' : 'bg-white'}`}>
+            {chunk.metadata?.isChecked && <div className="w-2 h-2 bg-white rounded-full" />}
+          </div>
+          <span className={`${weightClass} ${italicClass} ${underlineClass} text-slate-700 dark:text-slate-300`}>{text}</span>
+        </div>
+      );
+    }
 
     if (chunk.type === 'heading') {
       const level = chunk.metadata?.level || 1;
@@ -101,7 +116,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ chunks, mode }) => {
       return (
         <HeadingTag 
           key={chunk.id} 
-          className={`${weightClass} ${italicClass} mb-4 leading-tight text-slate-900 dark:text-slate-100`}
+          className={`${weightClass} ${italicClass} ${underlineClass} mb-4 text-slate-900 dark:text-slate-100`}
           style={customStyles}
         >
           {text}
@@ -112,7 +127,7 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ chunks, mode }) => {
     return (
       <p 
         key={chunk.id} 
-        className={`mb-4 leading-relaxed text-slate-700 dark:text-slate-300 ${weightClass} ${italicClass}`}
+        className={`mb-4 leading-relaxed text-slate-700 dark:text-slate-300 ${weightClass} ${italicClass} ${underlineClass}`}
         style={customStyles}
       >
         {text}
@@ -122,30 +137,21 @@ const DocumentPreview: React.FC<DocumentPreviewProps> = ({ chunks, mode }) => {
 
   return (
     <div className="document-paper min-h-full bg-white dark:bg-slate-900/30 p-8 md:p-14 shadow-sm rounded-xl border border-slate-100 dark:border-slate-800 transition-all duration-300">
-      <div className="max-w-none prose prose-slate dark:prose-invert">
+      <div className="max-w-none">
         {renderContent()}
       </div>
       <style>{`
-        .document-paper h1, .document-paper h2, .document-paper h3, .document-paper h4, .document-paper h5, .document-paper h6 {
-          font-size: 14pt !important;
-          margin-top: 0 !important;
-          margin-bottom: 12pt !important;
-          color: inherit !important;
-          font-weight: bold !important;
+        .document-paper h1, .document-paper h2, .document-paper h3 {
+          font-size: 14pt;
+          font-weight: bold;
+          margin-bottom: 12pt;
         }
         .document-paper p {
-          font-size: 11pt !important;
-          margin-top: 0 !important;
-          margin-bottom: 11pt !important;
-          color: inherit !important;
+          font-size: 11pt;
+          margin-bottom: 11pt;
         }
-        .document-paper table {
-          border-collapse: collapse !important;
-          margin-top: 1rem !important;
-          margin-bottom: 1.5rem !important;
-        }
-        .document-paper {
-          box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.02);
+        .document-paper .underline {
+          text-decoration: underline;
         }
       `}</style>
     </div>

@@ -4,9 +4,6 @@ import { DocumentChunk, GlossaryItem, TranslationTone } from "../types";
 import { GEMINI_MODEL } from "../constants";
 
 export class GeminiService {
-  /**
-   * Translates chunks using the standard text-based batching engine.
-   */
   async translateChunks(
     chunks: DocumentChunk[],
     sourceLang: string,
@@ -18,7 +15,7 @@ export class GeminiService {
     const BATCH_SIZE = 12;
     const results: string[] = [];
     
-    const abstract = chunks.slice(0, 8).map(c => c.originalText).join(' ').substring(0, 1200);
+    const abstract = chunks.slice(0, 10).map(c => c.originalText).join(' ').substring(0, 1500);
     
     for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
       const batch = chunks.slice(i, i + BATCH_SIZE);
@@ -37,30 +34,26 @@ export class GeminiService {
     return results;
   }
 
-  /**
-   * Fallback for scanned documents (Vision-OCR mode).
-   */
   async translateScannedDocument(
     fileData: string,
     mimeType: string,
     targetLang: string,
     tone: TranslationTone
   ): Promise<DocumentChunk[]> {
-    // Create instance right before call to ensure latest API key
+    // Re-initialize client right before call per guidelines
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
-    const systemInstruction = `You are an elite Vision-OCR translation engine. 
-    You have been provided with a document that is either scanned or lacks a text layer.
+    const systemInstruction = `You are a specialized Multimodal Document Translation Architect.
+    TASK: Mirror the provided image perfectly in text.
     
-    TASK:
-    1. Scan the image/document visually.
-    2. Extract all readable text segments.
-    3. Translate the content to ${targetLang} using a ${tone} tone.
-    4. Maintain the original logical structure.
+    CRITICAL RULES:
+    1. EXTRACT ALL ELEMENTS: Tables, bullet points, and Checkboxes must be preserved.
+    2. CHECKBOXES: Represent empty checkboxes as "☐" and checked ones as "☑".
+    3. NO CONTENT LOSS: Do not skip small text or footers.
+    4. STRUCTURE: Identify headers, paragraphs, and list items.
     
-    OUTPUT FORMAT:
-    Return a JSON array of objects with this schema: 
-    { "type": "heading" | "paragraph", "originalText": "...", "translatedText": "..." }
+    OUTPUT:
+    JSON array: { "type": "heading" | "paragraph" | "checkbox", "originalText": "...", "translatedText": "..." }
     `;
 
     try {
@@ -69,7 +62,7 @@ export class GeminiService {
         contents: {
           parts: [
             { inlineData: { data: fileData, mimeType: mimeType } },
-            { text: `Please perform a neural OCR scan and translate this document into ${targetLang}.` }
+            { text: `Translate this document structure to ${targetLang}. Preserve all checkboxes and form elements.` }
           ]
         },
         config: {
@@ -91,23 +84,17 @@ export class GeminiService {
         }
       });
 
-      const text = response.text;
-      if (!text) throw new Error("Vision engine returned empty results.");
-      
-      const parsed = JSON.parse(text);
+      const parsed = JSON.parse(response.text || "[]");
       return parsed.map((item: any, idx: number) => ({
         id: `ocr-${idx}`,
-        type: item.type === 'heading' ? 'heading' : 'paragraph',
+        type: item.type === 'checkbox' ? 'checkbox' : (item.type === 'heading' ? 'heading' : 'paragraph'),
         originalText: item.originalText,
         translatedText: item.translatedText,
-        metadata: { alignment: 'left' }
+        metadata: { alignment: 'left', isCheckbox: item.type === 'checkbox' }
       }));
     } catch (err: any) {
-      if (err.message?.includes("entity was not found")) {
-        throw new Error("API_KEY_NOT_FOUND");
-      }
-      console.error("Multimodal Fallback Error:", err);
-      throw new Error("Neural vision scan failed. Ensure document is legible.");
+      if (err.message?.includes("entity was not found")) throw new Error("API_KEY_NOT_FOUND");
+      throw new Error("Vision neural scan failed.");
     }
   }
 
@@ -120,27 +107,26 @@ export class GeminiService {
     useGrounding: boolean,
     glossary: GlossaryItem[]
   ): Promise<string[]> {
+    // Re-initialize client right before call per guidelines
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const textToTranslate = batch.map(c => c.originalText);
+    
+    // Filter out truly empty chunks but keep placeholders
+    const textToTranslate = batch.map(c => c.type === 'empty-line' ? "---EMPTY_LINE---" : c.originalText);
     
     let glossaryInstruction = "";
     if (glossary.length > 0) {
-      const glossaryText = glossary.map(item => `"${item.original}" -> "${item.target}"`).join(', ');
-      glossaryInstruction = `\nSTRICT TERMINOLOGY MAPPING: Use: ${glossaryText}.`;
+      glossaryInstruction = `\nGLOSSARY: ${glossary.map(i => `"${i.original}" -> "${i.target}"`).join(', ')}.`;
     }
 
-    const toneInstructions: Record<TranslationTone, string> = {
-      professional: "Formal, balanced business tone.",
-      legal: "Precise legal terminology.",
-      technical: "Precise engineering jargon.",
-      medical: "Clinical accuracy.",
-      creative: "Stylistic resonance."
-    };
-
     const config: any = {
-      systemInstruction: `Enterprise Translation Engine. Tone: ${toneInstructions[tone]}. Abstract Context: ${abstract} ${glossaryInstruction}`,
+      systemInstruction: `High-Fidelity Enterprise Translator.
+      RULES:
+      1. PRESERVE STRUCTURAL MARKERS: If a text contains [ ] or [x] or checkboxes, keep them exactly as is in the translated string.
+      2. MIRROR FORMATTING: Do not add or remove periods/puncutation from the original.
+      3. EMPTY LINES: If you see "---EMPTY_LINE---", return exactly "---EMPTY_LINE---".
+      4. TONE: Use ${tone} tone.
+      ${glossaryInstruction}`,
       temperature: 0,
-      thinkingConfig: { thinkingBudget: 2000 },
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.ARRAY,
@@ -148,33 +134,34 @@ export class GeminiService {
       }
     };
 
-    if (useGrounding) {
-      config.tools = [{ googleSearch: {} }];
-    }
+    if (useGrounding) config.tools = [{ googleSearch: {} }];
 
     try {
       const response = await ai.models.generateContent({
         model: GEMINI_MODEL,
-        contents: { parts: [{ text: `Translate: ${JSON.stringify(textToTranslate)} to ${targetLang}` }] },
+        contents: { parts: [{ text: `Context: ${abstract}\n\nTranslate these segments to ${targetLang}: ${JSON.stringify(textToTranslate)}` }] },
         config
       });
       const parsed = JSON.parse(response.text || "[]");
-      return new Array(batch.length).fill("").map((_, i) => parsed[i] || batch[i].originalText);
+      return batch.map((c, i) => {
+        if (c.type === 'empty-line') return "";
+        return parsed[i] === "---EMPTY_LINE---" ? "" : (parsed[i] || c.originalText);
+      });
     } catch (error: any) {
-      if (error.message?.includes("API Key must be set") || error.message?.includes("entity was not found")) {
-        throw new Error("API_KEY_NOT_FOUND");
-      }
-      return textToTranslate;
+      if (error.message?.includes("entity was not found")) throw new Error("API_KEY_NOT_FOUND");
+      return batch.map(c => c.originalText);
     }
   }
 
   async detectLanguage(sampleText: string): Promise<string> {
+    // Re-initialize client right before call per guidelines
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     try {
       const response = await ai.models.generateContent({
-        model: GEMINI_MODEL,
-        contents: { parts: [{ text: `ISO 639-1 code for: "${sampleText.substring(0, 400)}"` }] },
-        config: { systemInstruction: "Output 2-letter code only." }
+        // Use flash model for basic tasks like language detection
+        model: 'gemini-3-flash-preview',
+        contents: { parts: [{ text: `Identify language for: "${sampleText.substring(0, 300)}"` }] },
+        config: { systemInstruction: "Output 2-letter ISO code only." }
       });
       return (response.text || "en").trim().toLowerCase().substring(0, 2);
     } catch (error) { return "en"; }

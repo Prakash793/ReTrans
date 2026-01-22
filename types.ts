@@ -15,13 +15,16 @@ export interface GlossaryItem {
 
 export interface DocumentChunk {
   id: string;
-  type: 'heading' | 'paragraph' | 'list-item' | 'table-cell' | 'metadata';
+  type: 'heading' | 'paragraph' | 'list-item' | 'table-cell' | 'metadata' | 'empty-line' | 'checkbox';
   originalText: string;
   translatedText?: string;
   metadata?: {
     level?: number;
     isBold?: boolean;
     isItalic?: boolean;
+    isUnderlined?: boolean;
+    isCheckbox?: boolean;
+    isChecked?: boolean;
     alignment?: 'left' | 'center' | 'right' | 'justify';
     row?: number;
     col?: number;
@@ -39,7 +42,7 @@ export interface TranslationState {
   error: string | null;
   originalFileName: string | null;
   originalFileType: string | null;
-  originalFileData?: string; // Base64 representation for multimodal OCR
+  originalFileData?: string; 
   mimeType?: string;
   chunks: DocumentChunk[];
   sourceLang: string;
